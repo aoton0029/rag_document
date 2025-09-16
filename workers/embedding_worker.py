@@ -7,7 +7,7 @@ from ..database.keyvalue_db.redis_client import RedisClient
 from ..database.vector_db.milvus_client import MilvusClient
 from ..database.relational_db.database import get_db
 from ..database.relational_db.models import DocumentMetadata
-from ..embedding.embedding_service import EmbeddingService, EmbeddingConfig
+from ..embedding.llamaindex_embedding_service import EmbeddingService, EmbeddingConfig
 
 
 class EmbeddingWorker:

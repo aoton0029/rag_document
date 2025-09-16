@@ -13,7 +13,7 @@ from ..database.document_db.mongo_client import MongoClient
 from ..database.keyvalue_db.redis_client import RedisClient
 from ..database.vector_db.milvus_client import MilvusClient
 from ..database.graph_db.neo4j_client import Neo4jClient
-from ..embedding.embedding_service import EmbeddingService, EmbeddingConfig
+from ..embedding.llamaindex_embedding_service import EmbeddingService, EmbeddingConfig
 
 
 @dataclass

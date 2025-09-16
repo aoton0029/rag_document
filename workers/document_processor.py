@@ -19,7 +19,7 @@ from llama_index.core.node_parser import SentenceSplitter
 from ..database.document_db.mongo_client import MongoClient
 from ..database.keyvalue_db.redis_client import RedisClient
 from ..database.relational_db.models import DocumentMetadata
-from ..embedding.embedding_service import EmbeddingService, EmbeddingConfig
+from ..embedding.llamaindex_embedding_service import EmbeddingService, EmbeddingConfig
 
 
 @dataclass
