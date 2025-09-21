@@ -183,13 +183,37 @@
 - llama-index-packs-neo4j-query-engine
 - llama-index-multi-modal-llms-ollama
 
-# ドキュメント保存フロー（統合ID + 分散インデックス）
+# ドキュメント保存フロー（統合StorageContext + 分散インデックス）
+
+## StorageContext統合設計
+### 統合StorageContext構成
+```python
+# 概念設計（コードではない）
+unified_storage_context = StorageContext(
+    docstore=MongoDocumentStore(collection="unified_documents"),  # MongoDB統合
+    vector_store=MilvusVectorStore(collection="unified_vectors"),  # Milvus統合
+    graph_store=Neo4jGraphStore(database="unified_graph"),        # Neo4j統合  
+    index_store=RedisIndexStore(namespace="unified_indexes"),     # Redis統合
+    property_graph_store=Neo4jPropertyGraphStore()               # Neo4j拡張
+)
+```
+
+### 統合インデックス種類
+- **VectorStoreIndex**: Milvusベクトル検索 + MongoDB/Redisメタデータ
+- **DocumentSummaryIndex**: MongoDB要約 + Neo4j関係性
+- **KnowledgeGraphIndex**: Neo4j知識グラフ + 全DB連携
+- **PropertyGraphIndex**: Neo4j詳細グラフ + 統合ID追跡
+- **ComposableGraph**: 全インデックス統合クエリエンジン
+
+## 修正フロー設計
+
 1. 統合ID生成・受け取り
    - 統合ID生成（unified_id, global_sequence, correlation_id）
    - ソース受領（アップロード、URL、DB取り込み）
    - **MongoDB**: raw_documents に統合IDで初期レコード作成（processing_status: "pending"）
    - **Redis**: 処理状況を統合IDでキャッシュ
    - distributed_index_registry に統合IDエントリ作成
+   - **StorageContext初期化**: 統合IDベースで全DB接続確立
 
 2. 前処理（統合ID継承）
    - OCR（必要時）、エンコーディング正規化
@@ -202,7 +226,7 @@
    - unified_chunk_id 生成（{doc_unified_id}_chunk_{index}形式）
    - トークンベース／文ベースの分割（例：chunk_size=800 tokens, overlap=50）
    - セマンティック境界を保つ工夫（見出しで分割）
-   - **MongoDB**: chunks コレクションに統合チャンクIDで保存
+   - **Document/Node生成**: llamaindex Document/Nodeオブジェクトに統合IDを埋め込み
    - **Neo4j**: 統合IDでエンティティ抽出してノード・関係性を構築
    - distributed_index_registry にチャンク統合IDエントリ追加
 
@@ -210,154 +234,169 @@
    - 一括バッチ化で埋め込みを生成（APIコール回数最小化）
    - **Redis**: 統合IDで埋め込みキャッシュ（同一チャンクの再計算回避）
    - 埋め込みモデルはユースケースに応じて選択（OpenAI/hf/ベクトル化モデル）
+   - **Document/Node更新**: 埋め込みベクトルを統合IDで関連付け
 
-5. 全DB統合保存
-   - **Milvus**: 統合IDでベクトルとメタを一括インサート、コレクション管理
-   - **MongoDB**: chunks に統合IDでmilvus_vector_id, neo4j_node_id を更新
-   - **Neo4j**: 統合IDでノード作成、ドキュメント-チャンク関係を構築
-   - **Redis**: 統合IDでチャンクデータとメタデータをキャッシュ
-   - 各DB保存完了時に distributed_index_registry の該当DB status を "completed" に更新
+5. **統合StorageContext保存・インデックス作成**
+   ```python
+   # 概念フロー（コードではない）
+   # 5-1. 全DBデータ保存（統合IDベース）
+   unified_storage_context.docstore.add_documents(documents)     # MongoDB保存
+   unified_storage_context.vector_store.add(nodes_with_vectors) # Milvus保存  
+   unified_storage_context.graph_store.upsert_triplets(triplets) # Neo4j保存
+   
+   # 5-2. 統合インデックス並列作成
+   vector_index = VectorStoreIndex(nodes, storage_context=unified_storage_context)
+   summary_index = DocumentSummaryIndex(documents, storage_context=unified_storage_context)  
+   graph_index = KnowledgeGraphIndex(documents, storage_context=unified_storage_context)
+   property_graph_index = PropertyGraphIndex(documents, storage_context=unified_storage_context)
+   
+   # 5-3. 統合インデックス永続化
+   vector_index.storage_context.persist(persist_dir=f"./storage/{unified_id}")
+   summary_index.storage_context.persist(persist_dir=f"./storage/{unified_id}")
+   graph_index.storage_context.persist(persist_dir=f"./storage/{unified_id}")
+   property_graph_index.storage_context.persist(persist_dir=f"./storage/{unified_id}")
+   ```
 
-6. 分散インデックス作成（統合ID基盤）
-   - **MongoDB**: 統合IDベースの複合インデックス作成
-     ```javascript
-     db.raw_documents.createIndex({"unified_id": 1, "created_at": -1})
-     db.chunks.createIndex({"unified_chunk_id": 1, "doc_unified_id": 1})
-     ```
-   - **Milvus**: 統合IDメタデータ付きベクトルインデックス構築
-     ```python
-     index_params = {"index_type": "HNSW", "metric_type": "COSINE", "params": {"M": 16, "efConstruction": 200}}
-     collection.create_index(field_name="vector", index_params=index_params)
-     ```
-   - **Neo4j**: 統合IDベースのノード・関係インデックス作成
-     ```cypher
-     CREATE INDEX unified_doc_index FOR (d:Document) ON (d.unified_id)
-     CREATE INDEX unified_chunk_index FOR (c:Chunk) ON (c.unified_chunk_id)
-     ```
-   - **Redis**: 統合IDベースの検索インデックス作成
-     ```python
-     FT.CREATE idx:unified ON HASH PREFIX 1 unified: SCHEMA 
-       unified_id TEXT SORTABLE 
-       doc_unified_id TEXT 
-       text TEXT
-     ```
-
-7. インデックス状態管理・検証
-   - distributed_index_registry で全DBインデックス状態を一元管理
-   - 各DBインデックス作成完了時に該当status を "completed" に更新
+6. **統合インデックス状態管理・検証**
+   - distributed_index_registry にStorageContext統合インデックス状態を記録
+   ```json
+   {
+     "unified_id": "doc_uuid_string",
+     "storage_context": {
+       "vector_index": {"status": "completed", "index_id": "vector_idx_uuid"},
+       "summary_index": {"status": "completed", "index_id": "summary_idx_uuid"},
+       "graph_index": {"status": "completed", "index_id": "graph_idx_uuid"},
+       "property_graph_index": {"status": "completed", "index_id": "prop_graph_idx_uuid"},
+       "persist_dir": "./storage/doc_uuid_string"
+     },
+     "overall_status": "completed"
+   }
+   ```
    - **MongoDB**: 統合IDで processing_status を "completed" に更新
-   - StorageContext を MongoDB/Milvus/Neo4j/Redis 統合IDで構成
    - サンプリングで統合ID検索精度確認、重複チェック、ログ出力
-   - overall_status を "completed" に更新
+   - 全インデックス作成完了でoverall_status を "completed" に更新
+
+7. **統合ComposableGraph作成**
+   ```python
+   # 概念設計（コードではない）
+   composable_graph = ComposableGraph.from_indices(
+       vector_index,      # Milvus高速ベクトル検索
+       summary_index,     # MongoDB要約情報  
+       graph_index,       # Neo4j知識グラフ
+       property_graph_index, # Neo4j詳細プロパティ
+       index_summaries=[
+           "ベクトル類似検索用インデックス",
+           "ドキュメント要約検索用インデックス", 
+           "知識グラフ関係性検索用インデックス",
+           "詳細プロパティグラフ検索用インデックス"
+       ]
+   )
+   # 統合クエリエンジン構築
+   unified_query_engine = composable_graph.as_query_engine()
+   ```
 
 8. 完了・監査ログ
    - **MongoDB**: query_logs に統合IDでの処理履歴を保存
    - **Redis**: 統合IDでの処理結果をキャッシュ
    - 全DB横断での統合ID一貫性チェック
+   - **StorageContext永続化確認**: 全インデックスの永続化状態確認
 
-## RAG（質問応答）フロー（統合ID活用）
+## RAG（質問応答）フロー（統合StorageContext活用）
+
 1. 入力クエリの正規化
    - correlation_id 生成でリクエスト追跡
    - **Redis**: セッション情報とクエリ履歴を統合IDベースで取得
    - トークン化、言語判定、簡易前処理（不要文字除去）
 
-2. 統合キャッシュ確認
+2. **統合StorageContext読み込み**
+   ```python
+   # 概念フロー（コードではない）
+   # 既存統合インデックス読み込み
+   storage_context = StorageContext.from_defaults(persist_dir="./storage")
+   vector_index = load_index_from_storage(storage_context, index_id="vector_idx")
+   summary_index = load_index_from_storage(storage_context, index_id="summary_idx")  
+   graph_index = load_index_from_storage(storage_context, index_id="graph_idx")
+   property_graph_index = load_index_from_storage(storage_context, index_id="prop_graph_idx")
+   
+   # ComposableGraph再構築
+   composable_graph = ComposableGraph.from_indices(
+       vector_index, summary_index, graph_index, property_graph_index
+   )
+   unified_query_engine = composable_graph.as_query_engine()
+   ```
+
+3. 統合キャッシュ確認
    - **Redis**: 統合IDベースで類似クエリの結果をチェック
    - ヒットした場合は統合IDトレース付きで高速レスポンス
 
-3. クエリ埋め込み生成
-   - **Redis**: 埋め込み結果を統合IDで関連付けてキャッシュ
-   - 検索用埋め込みを生成（同じ埋め込みモデルを使用）
+4. **統合インデックスクエリ実行**
+   ```python
+   # 概念フロー（コードではない）
+   # 統合クエリエンジンで全DB横断検索
+   response = unified_query_engine.query(
+       query_str,
+       response_mode="tree_summarize",  # 全インデックス結果統合
+       use_async=True,                  # 並列検索実行
+       similarity_top_k=10,            # ベクトル検索上位K
+       include_graph_context=True,     # グラフ関係性含む
+       include_summary_context=True    # 要約情報含む
+   )
+   ```
 
-4. 統合マルチDB検索
-   - **Milvus**: 統合IDメタデータ付きベクトル類似検索で top_k を取得
-   - **MongoDB**: 統合IDでメタデータフィルタリング（日付/ドメイン絞り込み）
-   - **Neo4j**: 統合IDで関連エンティティ・知識グラフ情報を補強
-   - **Redis**: 統合ID検索結果をキャッシュ
-
-5. 統合ID再ランキング（任意）
-   - LLM ベースの relevance re-ranker で統合ID上位 N を再評価
-   - **Redis**: 統合IDリランキング結果をキャッシュ
-
-6. 統合コンテキスト構築
-   - **MongoDB**: unified_chunk_id から完全なテキストとメタデータを取得
-   - **Neo4j**: 統合IDで関連する知識グラフ情報を付加
-   - プロンプトテンプレートに統合ID情報を埋め込み（長さ管理）
-
-7. LLM 呼び出し・統合ID追跡
-   - 指示の明確化（出典必須、推測は明示）
-   - correlation_id でLLM呼び出しを追跡
-
-8. 統合ポストプロセス・記録
+5. 統合レスポンス処理
    - **MongoDB**: query_logs に統合IDでの詳細ログを保存
    - **Redis**: 統合IDレスポンスをキャッシュ
    - 出典整形（unified_chunk_id -> doc_unified_id mapping、ページ情報）
+   - 全インデックスからの根拠情報統合
 
-# 類似検索フロー（統合ID連携）
-1. **Redis**: 統合IDクエリキャッシュ確認
-2. **Milvus**: 統合IDベクトル類似検索実行
-3. **MongoDB**: 統合IDメタデータフィルタとテキスト補完
-4. **Neo4j**: 統合IDで関連文書の関係性情報を付加
-5. **Redis**: 統合ID結果をキャッシュして返却
+# 類似検索フロー（統合StorageContext連携）
 
-# 統合ID管理・検索パラメータ
-## 統合ID設計原則
-- unified_id: 全DB共通プライマリキー（UUID4 + timestamp）
-- correlation_id: リクエスト追跡用（分散トレーシング）
-- 各DBネイティブIDとの相互参照維持
-- 統合IDでのクロスDB結合クエリ最適化
+1. **統合StorageContext読み込み**: 永続化された全インデックス復元
+2. **統合クエリ実行**: ComposableGraphで全DB横断類似検索
+3. **結果統合**: ベクトル類似度 + グラフ関係性 + 要約情報の統合スコアリング
+4. **Redis統合キャッシュ**: 統合ID結果をキャッシュして返却
 
-## Milvus 統合ID対応
-- vector_id として統合IDを使用
-- partition_key として doc_unified_id を活用
-- メタデータに unified_chunk_id を含める
+# 統合StorageContext管理・検索パラメータ
 
-## MongoDB 統合ID対応  
-- unified_id でのシャーディングキー設計
-- 統合ID複合インデックス戦略
-- 集約パイプラインでの統合ID活用
+## StorageContext設計原則
+- **統合ID基盤**: 全インデックスで統一された統合ID参照
+- **永続化戦略**: 統合IDディレクトリでの階層化永続化
+- **増分更新**: 既存StorageContextへの新規ドキュメント追加最適化
+- **並列処理**: 複数インデックス作成・検索の並列実行
 
-## Neo4j 統合ID対応
-- ノードプロパティとして unified_id を設定
-- 統合IDベースのCypher クエリ最適化
-- 関係性において統合ID参照を維持
+## インデックス更新戦略
+- **増分インデックス**: 新規ドキュメントの既存インデックスへの追加
+- **リバランス**: 定期的な全インデックス最適化・再構築  
+- **バージョン管理**: StorageContext変更履歴とロールバック機能
 
-## Redis 統合ID対応
-- 統合IDベースのキー設計パターン
-- 統合ID検索インデックス構築
-- TTL設定での統合ID一貫性管理
+# データ一貫性・整合性管理（統合StorageContext基盤）
 
-# データ一貫性・整合性管理（統合ID基盤）
-## 統合ID整合性チェック
-- 定期的な全DB横断統合ID存在確認
-- 孤立データ（統合IDが他DBに存在しない）の検出・修復
-- distributed_index_registry での状態不整合検出
+## StorageContext整合性チェック
+- 全インデックス間での統合ID参照整合性確認
+- インデックス欠損・不整合の自動検出・修復
+- distributed_index_registry とStorageContext状態の同期確認
 
-## 障害時統合ID復旧
-- 統合IDベースでの部分復旧戦略
-- 各DB障害時の統合ID情報保持
-- 統合IDログでの操作履歴追跡
+## 障害時StorageContext復旧
+- 部分インデックス障害時の他インデックス情報活用
+- 統合IDベースでの段階的インデックス復旧
+- StorageContext永続化データからの高速復元
 
-## バックアップ・リストア（統合ID対応）
-- 統合IDベースのポイントインタイム復旧
-- 各DBバックアップでの統合ID情報保持
-- クロスDB復旧時の統合ID整合性確保
+# 運用・監視（統合StorageContext統合）
 
-# 運用・監視（統合ID統合）
-## 統合ID追跡・監視
-- 統合IDベースの分散トレーシング
-- 各DB操作での統合ID性能監視
-- 統合ID重複・衝突の検出・アラート
+## StorageContext監視
+- 全インデックス横断でのクエリ性能監視
+- インデックスサイズ・更新頻度の統合監視
+- ComposableGraph応答時間・精度の継続監視
 
 ## 統合メトリクス
-- 統合IDベースのレイテンシ測定
-- 統合ID検索成功率・品質指標
-- distributed_index_registry ベースの健全性監視
+- StorageContextベースの統合検索精度測定
+- 全DB協調でのレスポンス品質指標
+- インデックス最適化効果の定量評価
 
-# 結論（統合ID + 分散インデックス設計のポイント）
-- **統合ID管理**: 全DB共通の統合IDで一貫性とトレーサビリティを確保
-- **分散インデックス**: 各DB最適化インデックスを統合IDベースで構築
-- **状態管理**: distributed_index_registry での一元的インデックス状態管理
-- **整合性保証**: 統合IDベースでの全DB横断整合性チェック機構
-- **障害回復**: 統合ID追跡による高精度な部分復旧・修復戦略
-- **運用効率**: 統合IDベースの監視・トレーシングで運用負荷軽減
+# 結論（統合StorageContext設計のポイント）
+- **統合インデックス管理**: StorageContextで全DB統合インデックス一元化
+- **ComposableGraph活用**: 複数インデックス横断での高精度検索実現
+- **永続化戦略**: 統合IDベース階層化でのインデックス永続化
+- **並列処理最適化**: 複数インデックス作成・検索の効率的並列実行
+- **整合性保証**: StorageContext + distributed_index_registry での二重整合性管理
+- **運用効率向上**: 統合インデックス監視でのシステム全体最適化
