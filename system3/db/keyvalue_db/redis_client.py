@@ -6,15 +6,13 @@ import json
 import pickle
 import hashlib
 from typing import Any, Dict, List, Optional, Union
-
-# Import models
 from .models import UserSession, QueryCache, EmbeddingCache, AnalyticsCache, MetricsCache
 
 
 class RedisClient:
     """Redis client for key-value store operations with model support."""
     
-    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None):
+    def __init__(self, host: str, port: int, db: int = 0, password: Optional[str] = None):
         self.client = redis.Redis(
             host=host,
             port=port,
