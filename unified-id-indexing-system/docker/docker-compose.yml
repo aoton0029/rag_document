@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:latest
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+
+  neo4j:
+    image: neo4j:latest
+    container_name: neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/example
+    volumes:
+      - neo4j_data:/data
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  milvus:
+    image: milvusdb/milvus:latest
+    container_name: milvus
+    ports:
+      - "19530:19530"
+    environment:
+      MILVUS_DB: milvus
+    volumes:
+      - milvus_data:/var/lib/milvus
+
+volumes:
+  mongo_data:
+  neo4j_data:
+  redis_data:
+  milvus_data:

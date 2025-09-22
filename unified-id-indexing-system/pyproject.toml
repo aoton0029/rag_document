@@ -1,0 +1,27 @@
+[tool]
+name = "unified-id-indexing-system"
+version = "0.1.0"
+description = "A system for generating and managing unified IDs and indexing across multiple databases."
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+llama-index = "^0.1.0"
+pymongo = "^3.11"
+neo4j = "^4.0.0"
+redis = "^3.5.3"
+milvus = "^0.10.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.0"
+black = "^21.0"
+isort = "^5.0"
+mypy = "^0.812"
+
+[tool.poetry.scripts]
+start = "src.api.routes:main"
