@@ -1,25 +1,21 @@
 from pymilvus import connections, Collection, DataType, FieldSchema, CollectionSchema, utility
 from typing import List, Dict, Any, Optional, Tuple
 from models import BaseCollection
+import json
 
 class MilvusClient:
-    """Milvus client for vector storage and similarity search."""
-
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
         self.connect()
 
     def connect(self):
-        """Connect to Milvus server."""
         connections.connect("default", host=self.host, port=self.port)
 
     def close(self):
-        """Close connection."""
         connections.disconnect("default")
 
     def has_collection(self, name: str) -> bool:
-        """Return True if collection exists."""
         return utility.has_collection(name)
 
     def create_collection(self,
@@ -35,7 +31,6 @@ class MilvusClient:
         return collection
 
     def drop_collection(self, name: str) -> None:
-        """Drop collection if exists."""
         if self.has_collection(name):
             Collection(name).drop()
 
@@ -53,7 +48,6 @@ class MilvusClient:
                      metric_type: str = "L2",
                      params: Optional[Dict[str, Any]] = None) -> None:
         """
-        Create an index on the given vector field.
         params example: {"nlist": 128}
         """
         collection = self._get_collection(collection_name)
@@ -62,31 +56,23 @@ class MilvusClient:
         collection.create_index(field_name, {"index_type": index_type, "metric_type": metric_type, "params": params})
 
     def load_collection(self, collection_name: str) -> None:
-        """Load collection into memory for search."""
         collection = self._get_collection(collection_name)
         collection.load()
 
     def release_collection(self, collection_name: str) -> None:
-        """Release collection from memory."""
         collection = self._get_collection(collection_name)
         collection.release()
 
     def insert(self, collection_name: str, data: List[BaseCollection]) -> List[int]:
-        """Insert data into collection."""
         if not data:
             return []
         
         collection = self._get_collection(collection_name)
         
-        # Convert Pydantic models to Milvus format
         insert_data = []
         for item in data:
-            # Convert to dict using aliases
             item_dict = item.model_dump(by_alias=True)
-            
-            # Handle metadata field - convert to JSON string if it exists
             if 'metadata' in item_dict and item_dict['metadata'] is not None:
-                import json
                 if isinstance(item_dict['metadata'], dict):
                     item_dict['metadata'] = json.dumps(item_dict['metadata'])
                 elif hasattr(item_dict['metadata'], 'dict'):
@@ -174,3 +160,81 @@ class MilvusClient:
         collection = self._get_collection(collection_name)
         res = collection.query(expr=expr, output_fields=output_fields or [])
         return res
+    
+    def get_collection_info(self) -> Dict[str, Any]:
+        """Get collection information including schema and statistics."""
+        try:
+            # Get all collections
+            collections = utility.list_collections()
+            if not collections:
+                return {"collections": [], "total_collections": 0}
+            
+            collection_info = []
+            for collection_name in collections:
+                try:
+                    collection = Collection(collection_name)
+                    
+                    # Get schema information
+                    schema_info = {
+                        "name": collection_name,
+                        "description": collection.description,
+                        "fields": []
+                    }
+                    
+                    # Add field information
+                    for field in collection.schema.fields:
+                        field_info = {
+                            "name": field.name,
+                            "type": str(field.dtype),
+                            "is_primary": field.is_primary_key,
+                            "auto_id": field.auto_id
+                        }
+                        if hasattr(field, 'params'):
+                            field_info["params"] = field.params
+                        schema_info["fields"].append(field_info)
+                    
+                    # Get collection stats
+                    stats = {
+                        "num_entities": collection.num_entities,
+                        "is_loaded": utility.loading_progress(collection_name)["loading_progress"] == "100%"
+                    }
+                    
+                    collection_info.append({
+                        "schema": schema_info,
+                        "statistics": stats
+                    })
+                    
+                except Exception as e:
+                    collection_info.append({
+                        "name": collection_name,
+                        "error": str(e)
+                    })
+            
+            return {
+                "collections": collection_info,
+                "total_collections": len(collections)
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def count_vectors(self) -> int:
+        """Count the total number of vectors across all collections."""
+        try:
+            total_count = 0
+            collections = utility.list_collections()
+            
+            for collection_name in collections:
+                try:
+                    collection = Collection(collection_name)
+                    total_count += collection.num_entities
+                except Exception as e:
+                    print(f"Error counting vectors in collection {collection_name}: {e}")
+                    continue
+            
+            return total_count
+            
+        except Exception as e:
+            print(f"Error counting vectors: {e}")
+            return 0
+   

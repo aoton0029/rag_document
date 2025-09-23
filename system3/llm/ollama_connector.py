@@ -50,8 +50,8 @@ class OllamaConnector:
             return False
     
     @staticmethod
-    def generate(base_url: str, model_name:str) -> 'OllamaConnector':
+    def generate(base_url: str = "http://ollama:11434", model_name: str = "llama3.2:3b") -> 'OllamaConnector':
         connector = OllamaConnector(base_url=base_url)
         connector.initialize_llm(model_name=model_name)
-        connector.initialize_embedding(model_name=model_name)
+        connector.initialize_embedding(model_name="nomic-embed-text")  # Use embedding model
         return connector
