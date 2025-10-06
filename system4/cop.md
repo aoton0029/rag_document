@@ -1346,3 +1346,622 @@ if __name__ == "__main__":
 6. **評価システム**: マニュアル特化の評価指標
 
 このサンプルを参考に、具体的な製品マニュアルに合わせてカスタマイズしてください。
+
+製品説明書をRAGで処理する際の高精度化サンプルを作成しました。データ保存、クエリ処理、評価の各段階で最適化を図るコードです。
+
+## 製品説明書RAG高精度化サンプル
+
+```python
+import os
+import json
+import asyncio
+from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime
+
+# LlamaIndex imports
+from llama_index.core import (
+    VectorStoreIndex, 
+    Document, 
+    StorageContext,
+    Settings,
+    ServiceContext
+)
+from llama_index.core.node_parser import (
+    SentenceSplitter,
+    SemanticSplitterNodeParser,
+    HierarchicalNodeParser
+)
+from llama_index.core.extractors import (
+    TitleExtractor,
+    KeywordExtractor,
+    SummaryExtractor,
+    QuestionsAnsweredExtractor
+)
+from llama_index.core.ingestion import IngestionPipeline
+from llama_index.core.retrievers import (
+    VectorIndexRetriever,
+    QueryFusionRetriever
+)
+from llama_index.retrievers.bm25 import BM25Retriever
+from llama_index.core.postprocessor import (
+    SimilarityPostprocessor,
+    KeywordNodePostprocessor,
+    MetadataReplacementPostProcessor
+)
+from llama_index.core.query_engine import (
+    TransformQueryEngine,
+    RouterQueryEngine,
+    RetrieverQueryEngine
+)
+from llama_index.core.indices.query.query_transform import (
+    HyDEQueryTransform,
+    StepDecomposeQueryTransform
+)
+from llama_index.core.tools import QueryEngineTool
+from llama_index.core.evaluation import (
+    FaithfulnessEvaluator,
+    RelevancyEvaluator,
+    CorrectnessEvaluator,
+    SemanticSimilarityEvaluator,
+    BatchEvalRunner,
+    EvaluationResult
+)
+from llama_index.core.evaluation.dataset_generation import (
+    DatasetGenerator,
+    RagDatasetGenerator
+)
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.postprocessor.cohere_rerank import CohereRerank
+
+@dataclass
+class RAGConfiguration:
+    """RAG設定クラス"""
+    # データ保存設定
+    chunk_size: int = 512
+    chunk_overlap: int = 50
+    use_semantic_chunking: bool = True
+    use_hierarchical_chunking: bool = False
+    
+    # 埋め込み設定
+    embedding_model: str = "intfloat/multilingual-e5-large"
+    
+    # 検索設定
+    similarity_top_k: int = 10
+    use_hybrid_search: bool = True
+    use_reranking: bool = True
+    rerank_top_n: int = 5
+    
+    # クエリ変換設定
+    use_hyde: bool = True
+    use_query_decomposition: bool = False
+    num_fusion_queries: int = 4
+    
+    # 評価設定
+    eval_batch_size: int = 10
+
+class ProductManualRAGSystem:
+    """製品説明書専用RAGシステム"""
+    
+    def __init__(self, config: RAGConfiguration):
+        self.config = config
+        self.setup_models()
+        self.documents = []
+        self.index = None
+        self.query_engine = None
+        self.evaluation_results = {}
+        
+    def setup_models(self):
+        """モデルとサービスの初期化"""
+        # 埋め込みモデルの設定
+        embed_model = HuggingFaceEmbedding(
+            model_name=self.config.embedding_model
+        )
+        Settings.embed_model = embed_model
+        
+    def load_product_documents(self, file_paths: List[str]) -> List[Document]:
+        """製品説明書の読み込み"""
+        documents = []
+        
+        for file_path in file_paths:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # ファイル名から製品情報を抽出
+                filename = os.path.basename(file_path)
+                product_name = filename.split('.')[0]
+                
+                # メタデータの設定（製品説明書特有）
+                metadata = {
+                    "source": file_path,
+                    "product_name": product_name,
+                    "document_type": "manual",
+                    "language": "ja",
+                    "processed_date": datetime.now().isoformat(),
+                    # 製品説明書特有のメタデータ
+                    "sections": self._extract_sections(content),
+                    "product_category": self._infer_product_category(content),
+                    "technical_level": self._assess_technical_level(content)
+                }
+                
+                doc = Document(text=content, metadata=metadata)
+                documents.append(doc)
+                
+            except Exception as e:
+                print(f"Error loading {file_path}: {e}")
+                
+        self.documents = documents
+        return documents
+    
+    def _extract_sections(self, content: str) -> List[str]:
+        """セクション情報の抽出"""
+        import re
+        # 一般的な説明書のセクションパターン
+        patterns = [
+            r'第\d+章\s*(.+)',  # 第1章 概要
+            r'\d+\.\s*(.+)',    # 1. はじめに
+            r'■\s*(.+)',        # ■ 安全上の注意
+            r'【(.+)】',         # 【仕様】
+        ]
+        
+        sections = []
+        for pattern in patterns:
+            matches = re.findall(pattern, content)
+            sections.extend(matches)
+        
+        return sections[:10]  # 最大10セクション
+    
+    def _infer_product_category(self, content: str) -> str:
+        """製品カテゴリの推定"""
+        categories = {
+            "electronics": ["電子機器", "回路", "電源", "バッテリー"],
+            "software": ["ソフトウェア", "アプリ", "プログラム", "システム"],
+            "mechanical": ["機械", "エンジン", "モーター", "ギア"],
+            "medical": ["医療", "診断", "治療", "薬品"],
+            "household": ["家電", "調理", "清掃", "生活"]
+        }
+        
+        content_lower = content.lower()
+        for category, keywords in categories.items():
+            if any(keyword in content_lower for keyword in keywords):
+                return category
+        
+        return "general"
+    
+    def _assess_technical_level(self, content: str) -> str:
+        """技術レベルの評価"""
+        technical_terms = ["仕様", "パラメータ", "設定", "構成", "技術"]
+        advanced_terms = ["アルゴリズム", "プロトコル", "API", "フレームワーク"]
+        
+        tech_count = sum(1 for term in technical_terms if term in content)
+        advanced_count = sum(1 for term in advanced_terms if term in content)
+        
+        if advanced_count > 3:
+            return "advanced"
+        elif tech_count > 5:
+            return "intermediate"
+        else:
+            return "basic"
+    
+    def create_optimized_storage(self) -> VectorStoreIndex:
+        """最適化されたデータ保存システム"""
+        
+        # ノードパーサーの設定
+        if self.config.use_semantic_chunking:
+            # セマンティック分割（意味的な境界で分割）
+            node_parser = SemanticSplitterNodeParser(
+                buffer_size=1,
+                breakpoint_percentile_threshold=95,
+                embed_model=Settings.embed_model
+            )
+        elif self.config.use_hierarchical_chunking:
+            # 階層的分割
+            node_parser = HierarchicalNodeParser.from_defaults(
+                chunk_sizes=[2048, 512, 128]
+            )
+        else:
+            # 通常の文分割
+            node_parser = SentenceSplitter(
+                chunk_size=self.config.chunk_size,
+                chunk_overlap=self.config.chunk_overlap
+            )
+        
+        # メタデータ抽出器の設定
+        extractors = [
+            TitleExtractor(nodes=5),
+            KeywordExtractor(keywords=10),
+            SummaryExtractor(summaries=["prev", "self", "next"]),
+            QuestionsAnsweredExtractor(questions=3)
+        ]
+        
+        # インジェストパイプラインの作成
+        pipeline = IngestionPipeline(
+            transformations=[node_parser] + extractors
+        )
+        
+        # ドキュメントの処理
+        nodes = pipeline.run(documents=self.documents, show_progress=True)
+        
+        # インデックスの作成
+        self.index = VectorStoreIndex(nodes)
+        
+        return self.index
+    
+    def create_hybrid_retriever(self):
+        """ハイブリッド検索システムの作成"""
+        # ベクトル検索
+        vector_retriever = VectorIndexRetriever(
+            index=self.index,
+            similarity_top_k=self.config.similarity_top_k
+        )
+        
+        if self.config.use_hybrid_search:
+            # BM25検索の追加
+            bm25_retriever = BM25Retriever.from_defaults(
+                docstore=self.index.docstore,
+                similarity_top_k=self.config.similarity_top_k
+            )
+            
+            # ハイブリッド検索
+            retriever = QueryFusionRetriever(
+                [vector_retriever, bm25_retriever],
+                similarity_top_k=self.config.similarity_top_k,
+                num_queries=self.config.num_fusion_queries,
+                mode="reciprocal_rerank",
+                use_async=True
+            )
+        else:
+            retriever = vector_retriever
+            
+        return retriever
+    
+    def create_advanced_query_engine(self):
+        """高度なクエリエンジンの作成"""
+        retriever = self.create_hybrid_retriever()
+        
+        # ポストプロセッサーの設定
+        postprocessors = [
+            SimilarityPostprocessor(similarity_cutoff=0.7),
+            KeywordNodePostprocessor(
+                keywords=["製品", "仕様", "手順", "注意", "警告"],
+                exclude_keywords=["無関係", "削除"]
+            )
+        ]
+        
+        # リランキングの追加
+        if self.config.use_reranking:
+            # Note: Cohere API keyが必要
+            try:
+                rerank = CohereRerank(
+                    top_n=self.config.rerank_top_n,
+                    api_key=os.getenv("COHERE_API_KEY")
+                )
+                postprocessors.append(rerank)
+            except:
+                print("Cohere reranking not available")
+        
+        # 基本クエリエンジン
+        base_query_engine = RetrieverQueryEngine(
+            retriever=retriever,
+            node_postprocessors=postprocessors
+        )
+        
+        # クエリ変換の追加
+        if self.config.use_hyde:
+            # HyDE変換
+            hyde_transform = HyDEQueryTransform(include_original=True)
+            query_engine = TransformQueryEngine(
+                base_query_engine, 
+                query_transform=hyde_transform
+            )
+        elif self.config.use_query_decomposition:
+            # ステップ分解
+            step_transform = StepDecomposeQueryTransform()
+            query_engine = TransformQueryEngine(
+                base_query_engine,
+                query_transform=step_transform
+            )
+        else:
+            query_engine = base_query_engine
+        
+        self.query_engine = query_engine
+        return query_engine
+
+class ProductManualEvaluator:
+    """製品説明書RAG専用評価システム"""
+    
+    def __init__(self, rag_system: ProductManualRAGSystem):
+        self.rag_system = rag_system
+        self.evaluators = {}
+        self.test_datasets = {}
+        self.setup_evaluators()
+        
+    def setup_evaluators(self):
+        """評価器の初期化"""
+        self.evaluators = {
+            'faithfulness': FaithfulnessEvaluator(),
+            'relevancy': RelevancyEvaluator(), 
+            'correctness': CorrectnessEvaluator(),
+            'semantic_similarity': SemanticSimilarityEvaluator()
+        }
+    
+    def create_product_manual_dataset(self) -> Dict[str, Any]:
+        """製品説明書専用のテストデータセット作成"""
+        
+        # 製品説明書特有の質問パターン
+        manual_questions = [
+            # 基本情報
+            "この製品の主な機能は何ですか？",
+            "製品の仕様を教えてください",
+            "対応しているOSは何ですか？",
+            
+            # 操作・手順
+            "初期設定の手順を教えてください",
+            "電源の入れ方を教えてください",
+            "リセット方法を教えてください",
+            
+            # トラブルシューティング
+            "電源が入らない場合はどうすれば良いですか？",
+            "エラーが発生した時の対処法は？",
+            "動作が不安定な場合の対処法は？",
+            
+            # 安全・メンテナンス
+            "使用上の注意点は何ですか？",
+            "定期メンテナンスの方法を教えてください",
+            "保証期間はどのくらいですか？"
+        ]
+        
+        # RAGデータセット生成
+        dataset_generator = RagDatasetGenerator.from_documents(
+            documents=self.rag_system.documents,
+            num_questions_per_chunk=2
+        )
+        
+        auto_dataset = dataset_generator.generate_dataset_from_nodes()
+        
+        # マニュアル質問との結合
+        from llama_index.core.evaluation import QueryResponseDataset
+        
+        combined_questions = manual_questions + auto_dataset.questions
+        
+        manual_dataset = QueryResponseDataset(questions=combined_questions)
+        
+        self.test_datasets['product_manual'] = manual_dataset
+        
+        return {
+            'dataset': manual_dataset,
+            'manual_questions': manual_questions,
+            'auto_questions': auto_dataset.questions,
+            'total_questions': len(combined_questions)
+        }
+    
+    async def run_comprehensive_evaluation(self) -> Dict[str, Any]:
+        """包括的評価の実行"""
+        
+        if 'product_manual' not in self.test_datasets:
+            self.create_product_manual_dataset()
+        
+        dataset = self.test_datasets['product_manual']
+        
+        # バッチ評価の実行
+        runner = BatchEvalRunner(
+            evaluators=self.evaluators,
+            workers=4,
+            show_progress=True
+        )
+        
+        eval_results = await runner.aevaluate_dataset(
+            dataset=dataset,
+            query_engine=self.rag_system.query_engine
+        )
+        
+        # 結果の分析
+        analysis = self.analyze_evaluation_results(eval_results)
+        
+        return {
+            'raw_results': eval_results,
+            'analysis': analysis,
+            'recommendations': self.generate_recommendations(analysis)
+        }
+    
+    def analyze_evaluation_results(self, eval_results: Dict[str, List[EvaluationResult]]) -> Dict[str, Any]:
+        """評価結果の詳細分析"""
+        analysis = {}
+        
+        for evaluator_name, results in eval_results.items():
+            scores = [r.score for r in results if r.score is not None]
+            
+            if scores:
+                analysis[evaluator_name] = {
+                    'mean_score': sum(scores) / len(scores),
+                    'median_score': sorted(scores)[len(scores)//2],
+                    'min_score': min(scores),
+                    'max_score': max(scores),
+                    'std_deviation': self._calculate_std(scores),
+                    'score_distribution': self._get_score_distribution(scores),
+                    'low_performing_queries': self._get_low_performing_queries(results, threshold=0.7)
+                }
+        
+        # 総合評価スコア
+        overall_scores = []
+        for evaluator_results in eval_results.values():
+            scores = [r.score for r in evaluator_results if r.score is not None]
+            if scores:
+                overall_scores.extend(scores)
+        
+        if overall_scores:
+            analysis['overall'] = {
+                'mean_score': sum(overall_scores) / len(overall_scores),
+                'total_evaluations': len(overall_scores),
+                'passing_rate': len([s for s in overall_scores if s >= 0.7]) / len(overall_scores)
+            }
+        
+        return analysis
+    
+    def _calculate_std(self, scores: List[float]) -> float:
+        """標準偏差の計算"""
+        if len(scores) < 2:
+            return 0.0
+        
+        mean = sum(scores) / len(scores)
+        variance = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1)
+        return variance ** 0.5
+    
+    def _get_score_distribution(self, scores: List[float]) -> Dict[str, int]:
+        """スコア分布の取得"""
+        distribution = {'excellent': 0, 'good': 0, 'fair': 0, 'poor': 0}
+        
+        for score in scores:
+            if score >= 0.9:
+                distribution['excellent'] += 1
+            elif score >= 0.7:
+                distribution['good'] += 1
+            elif score >= 0.5:
+                distribution['fair'] += 1
+            else:
+                distribution['poor'] += 1
+        
+        return distribution
+    
+    def _get_low_performing_queries(self, results: List[EvaluationResult], threshold: float = 0.7) -> List[Dict]:
+        """低性能クエリの特定"""
+        low_performing = []
+        
+        for result in results:
+            if result.score is not None and result.score < threshold:
+                low_performing.append({
+                    'query': result.query,
+                    'score': result.score,
+                    'feedback': result.feedback
+                })
+        
+        return low_performing[:5]  # 上位5件
+    
+    def generate_recommendations(self, analysis: Dict[str, Any]) -> List[str]:
+        """改善提案の生成"""
+        recommendations = []
+        
+        if 'overall' in analysis:
+            overall_score = analysis['overall']['mean_score']
+            
+            if overall_score < 0.6:
+                recommendations.extend([
+                    "チャンクサイズを調整してコンテキストの精度を向上させる",
+                    "より高性能な埋め込みモデルを使用する",
+                    "メタデータ抽出を強化する"
+                ])
+            elif overall_score < 0.8:
+                recommendations.extend([
+                    "ハイブリッド検索の重み調整を行う",
+                    "リランキングモデルを導入する",
+                    "クエリ拡張手法を適用する"
+                ])
+        
+        # 評価項目別の推奨事項
+        if 'faithfulness' in analysis and analysis['faithfulness']['mean_score'] < 0.7:
+            recommendations.append("回答の忠実性向上のため、コンテキスト圧縮を検討する")
+        
+        if 'relevancy' in analysis and analysis['relevancy']['mean_score'] < 0.7:
+            recommendations.append("検索精度向上のため、セマンティック検索の調整を行う")
+        
+        if 'correctness' in analysis and analysis['correctness']['mean_score'] < 0.7:
+            recommendations.append("回答精度向上のため、プロンプトエンジニアリングを改善する")
+        
+        return recommendations
+
+class RAGOptimizationSuite:
+    """RAG最適化統合システム"""
+    
+    def __init__(self):
+        self.configurations = []
+        self.results = []
+        
+    def add_configuration(self, name: str, config: RAGConfiguration):
+        """設定の追加"""
+        self.configurations.append((name, config))
+    
+    async def run_optimization_experiments(self, file_paths: List[str]) -> Dict[str, Any]:
+        """最適化実験の実行"""
+        
+        results = {}
+        
+        for config_name, config in self.configurations:
+            print(f"\n=== 実験: {config_name} ===")
+            
+            # RAGシステムの作成
+            rag_system = ProductManualRAGSystem(config)
+            
+            # データの読み込み
+            rag_system.load_product_documents(file_paths)
+            
+            # インデックスとクエリエンジンの作成
+            rag_system.create_optimized_storage()
+            rag_system.create_advanced_query_engine()
+            
+            # 評価の実行
+            evaluator = ProductManualEvaluator(rag_system)
+            eval_results = await evaluator.run_comprehensive_evaluation()
+            
+            results[config_name] = {
+                'configuration': config,
+                'evaluation_results': eval_results,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        return results
+    
+    def compare_configurations(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """設定の比較分析"""
+        
+        comparison = {
+            'best_overall': None,
+            'best_faithfulness': None,
+            'best_relevancy': None,
+            'best_correctness': None,
+            'configuration_ranking': []
+        }
+        
+        config_scores = {}
+        
+        for config_name, result in results.items():
+            analysis = result['evaluation_results']['analysis']
+            
+            if 'overall' in analysis:
+                overall_score = analysis['overall']['mean_score']
+                config_scores[config_name] = overall_score
+                
+                # 各項目での最高スコア記録
+                if comparison['best_overall'] is None or overall_score > config_scores.get(comparison['best_overall'], 0):
+                    comparison['best_overall'] = config_name
+        
+        # ランキング作成
+        ranking = sorted(config_scores.items(), key=lambda x: x[1], reverse=True)
+        comparison['configuration_ranking'] = ranking
+        
+        return comparison
+
+# 使用例とメイン実行部分
+async def main():
+    """メイン実行関数"""
+    
+    # 最適化スイートの作成
+    optimizer = RAGOptimizationSuite()
+    
+    # 異なる設定の定義
+    configs = [
+        ("baseline", RAGConfiguration(
+            chunk_size=512,
+            use_hybrid_search=False,
+            use_reranking=False,
+            use_hyde=False
+        )),
+        ("hybrid_search", RAGConfiguration(
+            chunk_size=512,
+            use_hybrid_search=True,
+            use_reranking=False,
+            use_hyde=False
+        )),
+        ("full_optimization", RAGConfiguration(
+            chunk_size=256,
+            us
