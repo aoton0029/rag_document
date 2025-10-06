@@ -868,3 +868,481 @@ def check_performance_degradation(current_scores, baseline_scores, threshold=0.1
 ```
 
 この評価システムを使用することで、RAGシステムの性能を定量的に測定し、継続的な改善を行うことができます。重要なのは、複数の指標を組み合わせて総合的に評価し、実際のユースケースに応じて重要視する指標を調整することです。
+
+
+製品の説明書をRAGする具体的なサンプルを作成します。製品マニュアルに特化した実装例を提示します。
+
+## 製品説明書RAGシステムのサンプル実装
+
+### 1. 基本的な製品マニュアルRAGシステム
+
+```python
+import os
+from typing import List, Dict, Any
+from llama_index.core import VectorStoreIndex, Document, StorageContext
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.extractors import (
+    SummaryExtractor,
+    QuestionsAnsweredExtractor,
+    TitleExtractor,
+    KeywordExtractor
+)
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI
+from llama_index.core import Settings
+from llama_index.readers.file import PDFReader
+from llama_index.core.evaluation import (
+    FaithfulnessEvaluator,
+    RelevancyEvaluator,
+    CorrectnessEvaluator
+)
+
+class ProductManualRAG:
+    """製品説明書に特化したRAGシステム"""
+    
+    def __init__(self):
+        # LLMとEmbeddingの設定
+        Settings.llm = OpenAI(model="gpt-4", temperature=0.1)
+        Settings.embed_model = OpenAIEmbedding(model="text-embedding-ada-002")
+        
+        self.index = None
+        self.query_engine = None
+        self.documents = []
+        
+    def load_product_manuals(self, manual_paths: List[str]) -> List[Document]:
+        """製品マニュアルを読み込み"""
+        documents = []
+        reader = PDFReader()
+        
+        for path in manual_paths:
+            # ファイル名から製品名を抽出
+            product_name = os.path.splitext(os.path.basename(path))[0]
+            
+            # PDFを読み込み
+            docs = reader.load_data(file=path)
+            
+            for i, doc in enumerate(docs):
+                # 製品マニュアル特有のメタデータを付与
+                doc.metadata.update({
+                    "product_name": product_name,
+                    "document_type": "manual",
+                    "page_number": i + 1,
+                    "source_file": path,
+                    "manual_section": self._extract_section_from_content(doc.text),
+                    "manual_category": self._classify_manual_content(doc.text)
+                })
+                documents.append(doc)
+        
+        self.documents = documents
+        return documents
+    
+    def _extract_section_from_content(self, content: str) -> str:
+        """コンテンツからセクションを抽出"""
+        # 一般的なマニュアルセクションパターンを検出
+        section_keywords = {
+            "setup": ["セットアップ", "設置", "初期設定", "インストール"],
+            "operation": ["操作方法", "使用方法", "操作手順", "使い方"],
+            "troubleshooting": ["トラブルシューティング", "故障診断", "問題解決", "エラー"],
+            "maintenance": ["メンテナンス", "保守", "清掃", "点検"],
+            "specifications": ["仕様", "スペック", "技術仕様", "性能"],
+            "safety": ["安全", "注意事項", "警告", "危険"]
+        }
+        
+        content_lower = content.lower()
+        for section, keywords in section_keywords.items():
+            if any(keyword in content_lower for keyword in keywords):
+                return section
+        return "general"
+    
+    def _classify_manual_content(self, content: str) -> str:
+        """マニュアルコンテンツの分類"""
+        # 手順書、仕様書、注意事項などに分類
+        if any(word in content.lower() for word in ["手順", "ステップ", "方法"]):
+            return "procedure"
+        elif any(word in content.lower() for word in ["仕様", "スペック", "性能"]):
+            return "specification"
+        elif any(word in content.lower() for word in ["注意", "警告", "危険"]):
+            return "warning"
+        else:
+            return "description"
+    
+    def create_enhanced_index(self) -> VectorStoreIndex:
+        """強化されたインデックスを作成"""
+        # 製品マニュアル用のノードパーサー
+        splitter = SentenceSplitter(
+            chunk_size=512,
+            chunk_overlap=100,  # マニュアルでは前後の文脈が重要
+            separator=" "
+        )
+        
+        # メタデータ抽出器を設定
+        extractors = [
+            TitleExtractor(nodes=5),
+            QuestionsAnsweredExtractor(questions=3),
+            SummaryExtractor(summaries=["prev", "self", "next"]),
+            KeywordExtractor(keywords=10)
+        ]
+        
+        # ノードを作成
+        nodes = splitter.get_nodes_from_documents(self.documents, show_progress=True)
+        
+        # メタデータを抽出
+        for extractor in extractors:
+            nodes = extractor.extract(nodes, show_progress=True)
+        
+        # インデックスを作成
+        self.index = VectorStoreIndex(nodes, show_progress=True)
+        return self.index
+    
+    def create_specialized_query_engine(self):
+        """製品マニュアル特化のクエリエンジンを作成"""
+        from llama_index.core.retrievers import VectorIndexRetriever
+        from llama_index.core.postprocessor import MetadataReplacementPostProcessor
+        from llama_index.core.postprocessor import SimilarityPostprocessor
+        
+        # レトリーバーを設定
+        retriever = VectorIndexRetriever(
+            index=self.index,
+            similarity_top_k=10,
+        )
+        
+        # ポストプロセッサーを設定
+        postprocessors = [
+            SimilarityPostprocessor(similarity_cutoff=0.7),
+            MetadataReplacementPostProcessor(target_metadata_key="window")
+        ]
+        
+        # クエリエンジンを作成
+        self.query_engine = self.index.as_query_engine(
+            retriever=retriever,
+            node_postprocessors=postprocessors,
+            response_mode="compact"
+        )
+        
+        return self.query_engine
+    
+    def query_manual(self, question: str) -> Dict[str, Any]:
+        """マニュアルに質問"""
+        if not self.query_engine:
+            raise ValueError("Query engine not initialized. Call create_specialized_query_engine first.")
+        
+        # 製品マニュアル用のプロンプトテンプレートを適用
+        enhanced_prompt = self._enhance_manual_prompt(question)
+        
+        # クエリを実行
+        response = self.query_engine.query(enhanced_prompt)
+        
+        # レスポンスを整理
+        return {
+            "answer": response.response,
+            "source_nodes": [
+                {
+                    "content": node.node.text,
+                    "product_name": node.node.metadata.get("product_name", "Unknown"),
+                    "section": node.node.metadata.get("manual_section", "Unknown"),
+                    "page": node.node.metadata.get("page_number", "Unknown"),
+                    "score": node.score
+                }
+                for node in response.source_nodes
+            ],
+            "metadata": {
+                "query": question,
+                "enhanced_prompt": enhanced_prompt,
+                "num_sources": len(response.source_nodes)
+            }
+        }
+    
+    def _enhance_manual_prompt(self, question: str) -> str:
+        """マニュアル質問用のプロンプト強化"""
+        base_prompt = f"""
+以下は製品マニュアルに関する質問です。正確で実用的な回答を提供してください。
+
+質問: {question}
+
+回答する際は以下の点に注意してください：
+1. 安全に関する情報がある場合は必ず含める
+2. 手順がある場合は番号付きで明確に示す
+3. 該当するページ番号や章を参照する
+4. 不明な点がある場合は「マニュアルに記載なし」と明記する
+5. 製品固有の注意事項があれば強調する
+
+回答:
+"""
+        return base_prompt
+
+# 評価用のクラス
+class ManualRAGEvaluator:
+    """製品マニュアルRAGの評価システム"""
+    
+    def __init__(self, rag_system: ProductManualRAG):
+        self.rag_system = rag_system
+        self.evaluators = {
+            'faithfulness': FaithfulnessEvaluator(),
+            'relevancy': RelevancyEvaluator(),
+            'correctness': CorrectnessEvaluator()
+        }
+    
+    def create_manual_test_questions(self) -> List[Dict[str, str]]:
+        """製品マニュアル用のテスト質問を生成"""
+        return [
+            {
+                "question": "この製品の初期設定方法を教えてください",
+                "expected_category": "setup"
+            },
+            {
+                "question": "エラーが発生した場合の対処法は？",
+                "expected_category": "troubleshooting"
+            },
+            {
+                "question": "定期的なメンテナンス方法について",
+                "expected_category": "maintenance"
+            },
+            {
+                "question": "製品の技術仕様を教えて",
+                "expected_category": "specifications"
+            },
+            {
+                "question": "安全に使用するための注意事項は？",
+                "expected_category": "safety"
+            }
+        ]
+    
+    def evaluate_manual_responses(self, test_questions: List[Dict[str, str]]) -> Dict[str, Any]:
+        """マニュアル回答の評価"""
+        results = []
+        
+        for test_case in test_questions:
+            question = test_case["question"]
+            response = self.rag_system.query_manual(question)
+            
+            # 各評価指標でスコア算出
+            evaluation_scores = {}
+            for eval_name, evaluator in self.evaluators.items():
+                try:
+                    result = evaluator.evaluate(question, response["answer"])
+                    evaluation_scores[eval_name] = result.score
+                except Exception as e:
+                    evaluation_scores[eval_name] = None
+                    print(f"Evaluation error for {eval_name}: {e}")
+            
+            results.append({
+                "question": question,
+                "answer": response["answer"],
+                "expected_category": test_case["expected_category"],
+                "scores": evaluation_scores,
+                "source_info": response["source_nodes"]
+            })
+        
+        return {
+            "individual_results": results,
+            "summary": self._calculate_summary_scores(results)
+        }
+    
+    def _calculate_summary_scores(self, results: List[Dict]) -> Dict[str, float]:
+        """サマリースコアを計算"""
+        summary = {}
+        for eval_name in self.evaluators.keys():
+            scores = [r["scores"][eval_name] for r in results if r["scores"][eval_name] is not None]
+            if scores:
+                summary[eval_name] = {
+                    "mean": sum(scores) / len(scores),
+                    "min": min(scores),
+                    "max": max(scores)
+                }
+        return summary
+
+# 使用例
+def main():
+    # 製品マニュアルRAGシステムの初期化
+    manual_rag = ProductManualRAG()
+    
+    # マニュアルファイルを読み込み（例）
+    manual_files = [
+        "product_a_manual.pdf",
+        "product_b_manual.pdf",
+        "safety_guidelines.pdf"
+    ]
+    
+    # ドキュメントを読み込み
+    documents = manual_rag.load_product_manuals(manual_files)
+    print(f"読み込んだドキュメント数: {len(documents)}")
+    
+    # インデックスを作成
+    index = manual_rag.create_enhanced_index()
+    
+    # クエリエンジンを作成
+    query_engine = manual_rag.create_specialized_query_engine()
+    
+    # 質問例
+    questions = [
+        "製品Aの初期設定手順を教えてください",
+        "エラーコード E001 が表示された場合の対処法は？",
+        "月次メンテナンスで確認すべき項目は何ですか？",
+        "この製品の最大動作温度は何度ですか？"
+    ]
+    
+    # 各質問に回答
+    for question in questions:
+        print(f"\n質問: {question}")
+        print("-" * 50)
+        
+        response = manual_rag.query_manual(question)
+        print(f"回答: {response['answer']}")
+        
+        print("\n参照したソース:")
+        for i, source in enumerate(response['source_nodes'][:3]):  # 上位3つを表示
+            print(f"{i+1}. {source['product_name']} - {source['section']} (ページ{source['page']})")
+    
+    # 評価の実行
+    evaluator = ManualRAGEvaluator(manual_rag)
+    test_questions = evaluator.create_manual_test_questions()
+    evaluation_results = evaluator.evaluate_manual_responses(test_questions)
+    
+    print("\n=== 評価結果 ===")
+    for eval_name, scores in evaluation_results["summary"].items():
+        print(f"{eval_name}: 平均={scores['mean']:.3f}, 最小={scores['min']:.3f}, 最大={scores['max']:.3f}")
+
+if __name__ == "__main__":
+    main()
+```
+
+### 2. より高度な製品マニュアル特化機能
+
+```python
+# 追加の特化機能
+class AdvancedManualRAG(ProductManualRAG):
+    """より高度な製品マニュアルRAG機能"""
+    
+    def create_product_specific_retrievers(self) -> Dict[str, Any]:
+        """製品別の特化レトリーバーを作成"""
+        from llama_index.core.retrievers import VectorIndexRetriever
+        
+        retrievers = {}
+        
+        # 製品ごとにレトリーバーを作成
+        products = set(doc.metadata.get("product_name") for doc in self.documents)
+        
+        for product in products:
+            # 製品固有のフィルター
+            def product_filter(nodes, product_name=product):
+                return [node for node in nodes 
+                       if node.metadata.get("product_name") == product_name]
+            
+            retriever = VectorIndexRetriever(
+                index=self.index,
+                similarity_top_k=5,
+                node_postprocessors=[product_filter]
+            )
+            retrievers[product] = retriever
+        
+        return retrievers
+    
+    def create_section_specific_engines(self) -> Dict[str, Any]:
+        """セクション特化のクエリエンジンを作成"""
+        engines = {}
+        sections = ["setup", "operation", "troubleshooting", "maintenance", "specifications"]
+        
+        for section in sections:
+            # セクション固有のプロンプト
+            section_prompts = {
+                "setup": "初期設定や設置に関する質問です。手順を明確に、安全事項を含めて回答してください。",
+                "operation": "操作方法に関する質問です。具体的な手順と注意点を含めて回答してください。",
+                "troubleshooting": "トラブルシューティングに関する質問です。問題の診断方法と解決手順を段階的に説明してください。",
+                "maintenance": "メンテナンスに関する質問です。定期的な点検項目と手順を詳細に説明してください。",
+                "specifications": "技術仕様に関する質問です。正確な数値と単位を含めて回答してください。"
+            }
+            
+            # セクション特化のクエリエンジン作成
+            engines[section] = self._create_section_engine(section, section_prompts[section])
+        
+        return engines
+    
+    def _create_section_engine(self, section: str, prompt_template: str):
+        """セクション特化のエンジンを作成"""
+        from llama_index.core.query_engine import CustomQueryEngine
+        
+        # セクションフィルタリング機能付きのカスタムエンジン
+        def section_query_fn(query_str: str):
+            # セクション情報を含む強化プロンプト
+            enhanced_query = f"{prompt_template}\n\n質問: {query_str}"
+            return self.query_engine.query(enhanced_query)
+        
+        return section_query_fn
+    
+    def smart_route_query(self, question: str) -> Dict[str, Any]:
+        """質問を適切なセクションに自動ルーティング"""
+        # 質問内容からセクションを推定
+        section_keywords = {
+            "setup": ["設定", "設置", "インストール", "初期", "セットアップ"],
+            "operation": ["操作", "使用", "使い方", "動作", "機能"],
+            "troubleshooting": ["エラー", "故障", "問題", "トラブル", "不具合"],
+            "maintenance": ["メンテナンス", "保守", "清掃", "点検", "交換"],
+            "specifications": ["仕様", "スペック", "性能", "容量", "サイズ"]
+        }
+        
+        question_lower = question.lower()
+        detected_section = "general"
+        max_matches = 0
+        
+        for section, keywords in section_keywords.items():
+            matches = sum(1 for keyword in keywords if keyword in question_lower)
+            if matches > max_matches:
+                max_matches = matches
+                detected_section = section
+        
+        # 検出されたセクションに応じた処理
+        if detected_section != "general":
+            section_engines = self.create_section_specific_engines()
+            response = section_engines[detected_section](question)
+            
+            return {
+                "answer": response.response,
+                "detected_section": detected_section,
+                "confidence": max_matches,
+                "routing": "section_specific"
+            }
+        else:
+            # 一般的な質問として処理
+            response = self.query_manual(question)
+            response["detected_section"] = "general"
+            response["routing"] = "general"
+            return response
+
+# 使用例（高度機能）
+def advanced_usage_example():
+    advanced_rag = AdvancedManualRAG()
+    
+    # 基本設定は同じ
+    manual_files = ["product_manual.pdf"]
+    advanced_rag.load_product_manuals(manual_files)
+    advanced_rag.create_enhanced_index()
+    advanced_rag.create_specialized_query_engine()
+    
+    # スマートルーティングの使用例
+    questions = [
+        "初期設定の手順を教えて",  # setup にルーティング
+        "エラーコード404の対処法",  # troubleshooting にルーティング
+        "最大消費電力は？",  # specifications にルーティング
+    ]
+    
+    for question in questions:
+        result = advanced_rag.smart_route_query(question)
+        print(f"質問: {question}")
+        print(f"検出されたセクション: {result['detected_section']}")
+        print(f"回答: {result['answer'][:200]}...")
+        print("-" * 50)
+
+if __name__ == "__main__":
+    advanced_usage_example()
+```
+
+この実装の特徴：
+
+1. **製品マニュアル特化**: セットアップ、操作、トラブルシューティングなど、マニュアル特有のセクション分類
+2. **メタデータ豊富化**: 製品名、ページ番号、セクション情報の自動抽出
+3. **スマートルーティング**: 質問内容に応じて適切なセクションに自動振り分け
+4. **安全重視**: 安全情報の優先表示機能
+5. **手順明確化**: ステップバイステップの回答生成
+6. **評価システム**: マニュアル特化の評価指標
+
+このサンプルを参考に、具体的な製品マニュアルに合わせてカスタマイズしてください。
