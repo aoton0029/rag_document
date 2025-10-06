@@ -320,3 +320,223 @@ eval_service.export_results(eval_results, "evaluation_results.json")
 5. **結果出力**: JSON形式での結果出力機能
 
 外部で作成済みのindex、documents、query_engineを受け取り、それらを使用して包括的な評価システムを提供します。
+
+
+
+
+RAG (Retrieval-Augmented Generation) の高精度化のためにLlamaIndexでできることについて説明します。
+
+## 1. データの前処理と準備
+
+### チャンクサイズの最適化
+```python
+from llama_index.core.node_parser import SentenceSplitter
+
+# チャンクサイズを調整
+splitter = SentenceSplitter(
+    chunk_size=512,  # 適切なサイズに調整
+    chunk_overlap=50  # オーバーラップを設定
+)
+```
+
+### メタデータの活用
+```python
+from llama_index.core import Document
+
+# 豊富なメタデータを付与
+documents = [
+    Document(
+        text=text,
+        metadata={
+            "source": "document_name.pdf",
+            "section": "章番号",
+            "date": "作成日時",
+            "category": "カテゴリ"
+        }
+    )
+]
+```
+
+## 2. 埋め込みモデルの選択と調整
+
+### 多言語対応モデルの使用
+```python
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
+# 日本語に最適化されたモデル
+embed_model = HuggingFaceEmbedding(
+    model_name="intfloat/multilingual-e5-large"
+)
+```
+
+### カスタム埋め込みの実装
+```python
+from llama_index.core import Settings
+
+Settings.embed_model = embed_model
+```
+
+## 3. 検索手法の改善
+
+### ハイブリッド検索の実装
+```python
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.retrievers.bm25 import BM25Retriever
+from llama_index.core.retrievers import QueryFusionRetriever
+
+# BM25とベクトル検索の組み合わせ
+vector_retriever = VectorIndexRetriever(index=vector_index)
+bm25_retriever = BM25Retriever.from_defaults(docstore=docstore)
+
+retriever = QueryFusionRetriever(
+    [vector_retriever, bm25_retriever],
+    similarity_top_k=10,
+    num_queries=4
+)
+```
+
+### リランキングの追加
+```python
+from llama_index.postprocessor.cohere_rerank import CohereRerank
+
+# リランキングでより関連性の高い結果を選択
+rerank = CohereRerank(top_n=5, api_key="your_api_key")
+query_engine = index.as_query_engine(
+    node_postprocessors=[rerank]
+)
+```
+
+## 4. クエリの拡張と変換
+
+### クエリ変換の実装
+```python
+from llama_index.core.query_engine import TransformQueryEngine
+from llama_index.core.indices.query.query_transform import HyDEQueryTransform
+
+# HyDE (Hypothetical Document Embeddings)
+hyde = HyDEQueryTransform(include_original=True)
+query_engine = TransformQueryEngine(base_query_engine, query_transform=hyde)
+```
+
+### 複数クエリ生成
+```python
+from llama_index.core.retrievers import QueryFusionRetriever
+
+retriever = QueryFusionRetriever(
+    [vector_retriever],
+    similarity_top_k=10,
+    num_queries=4,  # 複数のクエリを生成
+)
+```
+
+## 5. コンテキストの最適化
+
+### コンテキスト圧縮
+```python
+from llama_index.postprocessor.longllmlingua import LongLLMLinguaPostprocessor
+
+# 不要な情報を削除してコンテキストを圧縮
+compressor = LongLLMLinguaPostprocessor(
+    instruction_str="Given the context, please answer the question",
+    target_token=300,
+    rank_method="longllmlingua",
+    additional_compress_kwargs={
+        "condition_compare": True,
+        "condition_in_question": "after",
+        "context_budget": "+100",
+        "reorder_context": "sort"
+    }
+)
+```
+
+## 6. 評価とモニタリング
+
+### 評価メトリクスの実装
+```python
+from llama_index.core.evaluation import RelevancyEvaluator, FaithfulnessEvaluator
+
+# 関連性と忠実性の評価
+relevancy_evaluator = RelevancyEvaluator()
+faithfulness_evaluator = FaithfulnessEvaluator()
+
+# 評価の実行
+for query, response in test_cases:
+    relevancy = relevancy_evaluator.evaluate(query, response)
+    faithfulness = faithfulness_evaluator.evaluate(query, response)
+```
+
+### A/Bテストの実装
+```python
+# 異なる設定での性能比較
+def compare_configurations():
+    config_a = {"chunk_size": 512, "top_k": 5}
+    config_b = {"chunk_size": 256, "top_k": 10}
+    
+    # 各設定でのパフォーマンスを測定
+    results_a = evaluate_with_config(config_a)
+    results_b = evaluate_with_config(config_b)
+    
+    return results_a, results_b
+```
+
+## 7. 高度な手法
+
+### グラフRAGの実装
+```python
+from llama_index.core import KnowledgeGraphIndex
+from llama_index.graph_stores.neo4j import Neo4jGraphStore
+
+# グラフベースの検索
+graph_store = Neo4jGraphStore(username="neo4j", password="password")
+kg_index = KnowledgeGraphIndex.from_documents(
+    documents,
+    storage_context=StorageContext.from_defaults(graph_store=graph_store)
+)
+```
+
+### 階層的検索
+```python
+from llama_index.core import SummaryIndex, VectorStoreIndex
+from llama_index.core.tools import QueryEngineTool
+from llama_index.core.query_engine import RouterQueryEngine
+
+# 複数のインデックスを組み合わせ
+summary_tool = QueryEngineTool.from_defaults(
+    query_engine=summary_index.as_query_engine(),
+    description="サマリーレベルの情報用"
+)
+
+vector_tool = QueryEngineTool.from_defaults(
+    query_engine=vector_index.as_query_engine(),
+    description="詳細情報用"
+)
+
+router_query_engine = RouterQueryEngine.from_defaults(
+    query_engine_tools=[summary_tool, vector_tool]
+)
+```
+
+## 8. パフォーマンス最適化
+
+### キャッシング
+```python
+from llama_index.core.storage.cache import SimpleCache
+
+# クエリ結果のキャッシング
+cache = SimpleCache()
+query_engine = index.as_query_engine(cache=cache)
+```
+
+### 非同期処理
+```python
+import asyncio
+from llama_index.core import AsyncQueryEngine
+
+# 非同期でのクエリ処理
+async def async_query(questions):
+    async_engine = AsyncQueryEngine(query_engine)
+    tasks = [async_engine.aquery(q) for q in questions]
+    return await asyncio.gather(*tasks)
+```
+
+これらの手法を組み合わせることで、RAGシステムの精度を大幅に向上させることができます。重要なのは、データの特性とユースケースに応じて適切な手法を選択し、継続的に評価・改善することです。
