@@ -1,0 +1,40 @@
+# Core LlamaIndex
+llama-index>=0.10.0
+llama-index-core>=0.10.0
+
+# LLM and Embeddings (Ollama)
+llama-index-llms-ollama>=0.1.0
+llama-index-embeddings-ollama>=0.1.0
+ollama>=0.1.7
+
+# Vector Store (Milvus)
+llama-index-vector-stores-milvus>=0.1.0
+pymilvus>=2.3.0
+
+# Document Store (MongoDB)
+llama-index-storage-docstore-mongodb>=0.1.0
+pymongo>=4.5.0
+
+# Index Store (Redis)
+llama-index-storage-index-store-redis>=0.1.0
+redis>=4.5.0
+
+# Graph Store (Neo4j)
+llama-index-graph-stores-neo4j>=0.2.0
+neo4j>=5.0.0
+
+# Additional dependencies
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+numpy>=1.24.0
+sentence-transformers>=2.2.0
+
+# Document processing
+pypdf>=3.15.0
+docx2txt>=0.8
+python-docx>=0.8.11
+openpyxl>=3.1.0
+
+# Logging and utilities
+loguru>=0.7.0
+tqdm>=4.65.0
