@@ -69,3 +69,113 @@ GitHub Copilot Chat Assistantです。まず確認させてください — マ�
 - あなたのマニュアル（ファイル/サンプル）を使ってプロトタイプを作成
 
 どれを優先しますか？また、マニュアルの形式（PDF/HTML/テキスト）、サイズ（ページ数/文字数）、リアルタイム性と運用環境（クラウド or 社内）を教えてください。
+
+
+
+
+直接回答します — マニュアル向け advanced RAG の典型アーキテクチャで「各データベースに何を、どの粒度で保存するか」を実務的にまとめます。想定コンポーネント：オブジェクトストア（原本）、メタデータDB、全文検索（BM25/Elasticsearch等）、ベクトルDB（Qdrant/Milvus等）、キャッシュ/セッション（Redis）、分析ログDB、（オプション）ナレッジグラフ。用途毎に保存項目と推奨粒度を示します。
+
+1) オブジェクトストア（S3 / On-prem file store）
+- 役割：原本（PDF/HTML/Word/画像）と抽出済ファイルを保存。差分バックアップ。
+- 保存データ：
+  - document_id, file_path, file_type, upload_time, version, checksum
+  - OCR済みテキストファイル（全文テキストの原文）、抽出メタ（目次抽出結果ファイル）
+- 粒度：ドキュメント単位（ファイルごと）。変更時は新バージョンを保存。
+
+2) メタデータDB（リレーショナルまたはドキュメントDB）
+- 役割：目次構造、文書・章・節の関係、バージョン管理、ページマッピング、アクセス制御
+- 保存データ（必須フィールド例）：
+  - documents: document_id, title, author, version, language, created_at, updated_at
+  - toc_entries: toc_id, document_id, parent_id, level, title, start_page, end_page, summary, anchor (PDF/HTML), order
+  - chunks index link: chunk_count, last_indexed_at
+- 粒度：章／節（TOCエントリ）単位で明確に管理。TOCエントリは各節を1行で。
+
+3) ベクトルDB（Qdrant/Milvus/Pinecone 等）
+- 役割：意味検索（dense retrieval）。高精度な類似文検索を行うための主力格納先。
+- 保存データ（1レコード = 1チャンク／1要約ベクトル）：
+  - id (chunk_id), embedding (ベクトル), text (チャンク原文), summary (短い要約), document_id, toc_id/chapter_id, section_title, page_start, page_end, start_offset, end_offset, token_count, language, version, metadata (confidence, source_url)
+- 粒度（推奨）：
+  - チャンク単位：300–800トークン（日本語では 200–600 語相当を目安）、重複(オーバーラップ)20–30%。
+  - 長い章は節→さらにまとまりで分割。加えて「章サマリ」レコードを別途作り、TOC検索の高速化に使う。
+- 備考：
+  - 埋め込みは日本語対応モデルを使用。chunkごとにembeddingとsummaryを保持すると高速。
+
+4) 全文検索インデックス（Elasticsearch / OpenSearch / BM25系）
+- 役割：キーワード検索、タイトル / 目次レベルの高速フィルタリング、BM25とのハイブリッド検索
+- 保存データ（ドキュメント単位）：
+  - doc_id / chunk_id, title, section_title, summary, full_text (またはテキスト抜粋), page_range, ngram/tokenized_text（正規化済）
+- 粒度：
+  - TOCエントリ（章/節タイトル＋要約）とチャンク（本文スニペット）を両方投入。TOCは章レベル、本文はチャンクレベル。
+- 日本語の工夫：形態素解析器（Sudachi/Mecab）でトークン化、同義語辞書を入れる。
+
+5) メタ情報・参照マッピング（小規模NoSQL or RDB）
+- 役割：検索結果 → PDFアンカーの正確なジャンプ、参照履歴
+- 保存データ：
+  - chunk_to_pdf: chunk_id → document_id, page_start, page_end, bbox (必要なら)
+  - provenance: chunk_id → toc_id, extract_method, confidence_score
+- 粒度：チャンク単位。
+
+6) セッション / QAキャッシュ（Redis等）
+- 役割：対話履歴、直近のクエリ・回答キャッシュ、会話圧縮サマリの保存
+- 保存データ：
+  - session_id, user_id, conversation_history (圧縮/要約版), last_active, pinned_contexts
+  - QAキャッシュ: query_hash → (retrieved_chunk_ids, answer, timestamp, model_version)
+- 粒度：セッション単位・クエリ単位。頻繁アクセスのものはTTL設定。
+
+7) ログ／分析DB（TimescaleDB / BigQuery 等）
+- 役割：監査、評価、改善（ユーザークエリ・retrievalパフォーマンス・リランクスコア）
+- 保存データ：
+  - query_logs: query_id, user_id (匿名化可), query_text, timestamp, top_retrieved_chunk_ids, retrieval_scores, reranker_scores, answer_confidence, latency, cost_estimate, feedback_flag
+  - error_logs, reindex_events
+- 粒度：クエリ単位。必要に応じて週/日で集計。
+
+8) （オプション）ナレッジグラフDB（Neo4j等）
+- 役割：エンティティ／手順の関係表現（トラブル症状→原因→対処）
+- 保存データ：
+  - ノード：Equipment, Component, Symptom, Action, SafetyWarning
+  - エッジ：HAS_SYMPTOM, CAUSED_BY, REQUIRES_ACTION
+- 粒度：エンティティ単位（抽出ルールで定義）。FAQ生成や推論に利用。
+
+実運用での設計方針（要点）
+- TOCをメタDB/検索で先に引く（粗検索）→ 選ばれた章のチャンクをベクトルDBで細検索（階層検索）。これによりベクトル検索コストを削減。
+- 全レコードに version フィールドを持たせ、ドキュメント更新時は該当versionのチャンクだけ差分再インデックスする。
+- 各チャンクに provenance（document_id, toc_id, page範囲, offset）を必須で持たせ、回答時に必ず根拠を付けられるようにする。
+- 日本語は「原文」「正規化（読み仮名・半角全角正規化）」「形態素トークン列」をそれぞれ保持すると検索精度が上がる。
+
+具体的なフィールド例（ベクトルDBの1レコード）
+- chunk_id
+- document_id
+- toc_id / chapter_id
+- title (章タイトル)
+- text (原文チャンク)
+- text_normalized
+- summary (短い要約)
+- embedding (float[])
+- token_count
+- page_start, page_end
+- start_offset, end_offset
+- language
+- version
+- source_url_or_anchor
+- created_at, updated_at
+
+チャンク化ルールの推奨値
+- 300–800トークン（日本語は200–600単語相当）／チャンク
+- オーバーラップ：20–30%
+- セマンティック境界を優先（見出し、箇条、手順ブロックで切る）
+- 章単位の「章サマリ（数文）」を別途作成してTOC検索用ベクトルを作る
+
+更新とGC戦略
+- ドキュメント更新は差分インデックス：影響チャンクのみ再埋め込み・再投入
+- 古いバージョンは一定期間アーカイブしておき、必要なら参照可能にする
+- ベクトルDBは削除→upsertのコストが高いので、versionフィールドでフィルタしてquery時に最新versionのみ検索する方法が現実的
+
+運用指標（KPI）
+- 根拠率（回答に根拠を添付できた割合）
+- 回答正答率（人手評価）
+- 平均レイテンシ（検索 + LLM生成）
+- コスト（API呼び出し + 埋め込み + ストレージ）
+- インデックス更新時間（ドキュメント追加→検索可能まで）
+
+最後に確認させてください
+- マニュアルの規模（例：数十〜数百ページ、あるいは数千ページ）や更新頻度、オンプレ運用の有無を教えていただければ、DB設計（シャード/レプリカ設定、キャッシュTTL、チャンクサイズの最適化等）を具体化します。コード例（LangChain/LlamaIndex）か、SQLスキーマ例が欲しいですか？
