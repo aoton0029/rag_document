@@ -179,3 +179,237 @@ GitHub Copilot Chat Assistantです。まず確認させてください — マ�
 
 最後に確認させてください
 - マニュアルの規模（例：数十〜数百ページ、あるいは数千ページ）や更新頻度、オンプレ運用の有無を教えていただければ、DB設計（シャード/レプリカ設定、キャッシュTTL、チャンクサイズの最適化等）を具体化します。コード例（LangChain/LlamaIndex）か、SQLスキーマ例が欲しいですか？
+
+
+
+GitHub Copilot Chat Assistantです。以下は llamaindex を使った実装案（目次（TOC）→章絞り→チャンク検索 の階層型 RAG）です。まずは小〜中規模のPDF/テキスト向けにローカルで動くサンプルを示します。ご希望のベクタDB（Qdrant/Pinecone/FAISS 等）や LLM（OpenAI / local LLM）に合わせて調整できます。続けて実運用向けのポイントも簡潔に示します。
+
+前提
+- 入力ファイル：PDF またはテキストが ./data フォルダにある
+- Python環境がある（pipでインストール可能）
+- Embeddings/LLMは OpenAI（環境変数 OPENAI_API_KEY）か、SentenceTransformersを利用する想定
+
+インストール（例）
+pip install llama-index openai tiktoken sentence-transformers pdfplumber faiss-cpu
+
+実装フロー（コード）
+
+1) 文章抽出・目次（TOC）抽出（簡易ヒューリスティック）
+- PDFに目次がない場合は「見出し行（例: 第x章／§／数字付き見出し）」でTOCを推定
+- 目次がある場合はページ範囲をTOCに紐付ける
+
+2) チャンク化：章／節単位を基本に、さらにトークン上限で分割（オーバーラップあり）
+
+3) インデックス作成：TOC用サマリインデックス + チャンク用ベクターインデックス（メタデータにtoc_id/章名/pageを保存）
+
+4) クエリ処理：まずTOCインデックスで章候補を得て、候補章のチャンクのみを検索 → LLMで根拠付き生成
+
+サンプルコード（概念的・実行可能な最小例）
+
+```python
+# llamaindex を用いた階層RAG（TOC→本文チャンク）
+import os
+import re
+import json
+import pdfplumber
+from typing import List, Dict
+
+from llama_index import (
+    Document,
+    ServiceContext,
+    LLMPredictor,
+    PromptHelper,
+    GPTVectorStoreIndex,
+    SimpleDirectoryReader,
+    StorageContext,
+    load_index_from_storage,
+)
+from llama_index.embeddings import HuggingFaceEmbedding  # または OpenAIEmbedding
+from transformers import pipeline
+
+# --- 設定 ---
+DATA_DIR = "./data"
+INDEX_DIR = "./indices"
+CHUNK_TOKEN_SIZE = 600
+CHUNK_OVERLAP = 100
+
+# Embedding 選択例（sentence-transformers を使う例）
+embedding_model = HuggingFaceEmbedding("sentence-transformers/all-MiniLM-L6-v2")  # 日本語であれば cl-tohoku系を検討
+
+# LLM設定（簡易: OpenAI or local LLMに置き換えてください）
+# from llama_index.llms import OpenAI
+# llm = OpenAI(temperature=0, model="gpt-4o-mini")  # 例
+# LLMPredictor を使う場合:
+# llm_predictor = LLMPredictor(llm=llm)
+
+# ここではダミー ServiceContext（本番では llm_predictor を渡す）
+service_context = ServiceContext.from_defaults(embed_model=embedding_model)
+
+# --- ユーティリティ: PDF からテキスト抽出（ページ単位） ---
+def extract_text_from_pdf(path: str) -> Dict[int, str]:
+    pages = {}
+    with pdfplumber.open(path) as pdf:
+        for i, page in enumerate(pdf.pages, start=1):
+            text = page.extract_text() or ""
+            pages[i] = text
+    return pages
+
+# --- TOC推定（簡易）: ページ単位テキストから「第x章」「1.」「章タイトル」等を見つける ---
+TOC_REGEX = re.compile(r'^(第[一二三四五六七八九十0-9]+章|^\d+\.\s+|^章\s+).*', re.MULTILINE)
+
+def estimate_toc_from_pages(pages: Dict[int,str]) -> List[Dict]:
+    toc_entries = []
+    current = None
+    for page_no in sorted(pages.keys()):
+        text = pages[page_no]
+        # 見出しっぽい行の抽出（ヒューリスティック）
+        matches = TOC_REGEX.findall(text)
+        if matches:
+            # 最初の見出し行を章タイトルとして扱う
+            title_line = matches[0] if isinstance(matches[0], str) else matches[0][0]
+            # 新章開始
+            if current:
+                current['end_page'] = page_no - 1
+                toc_entries.append(current)
+            current = {"title": title_line.strip(), "start_page": page_no, "end_page": None, "toc_id": len(toc_entries)+1}
+    if current:
+        current['end_page'] = max(pages.keys())
+        toc_entries.append(current)
+    # fallback: 全文を1章にする
+    if not toc_entries:
+        toc_entries = [{"title": "全文", "start_page": 1, "end_page": max(pages.keys()), "toc_id": 1}]
+    return toc_entries
+
+# --- 章単位で本文を集め、テキストをチャンク化 ---
+def chunk_text(text: str, max_tokens=CHUNK_TOKEN_SIZE, overlap=CHUNK_OVERLAP) -> List[str]:
+    # 実運用ではトークンカウントベースの分割を推奨
+    words = text.split()
+    chunks = []
+    i = 0
+    while i < len(words):
+        chunk = words[i:i+max_tokens]
+        chunks.append(" ".join(chunk))
+        i += max_tokens - overlap
+    return chunks
+
+def build_documents_from_pdf(path: str) -> List[Document]:
+    pages = extract_text_from_pdf(path)
+    toc = estimate_toc_from_pages(pages)
+    documents = []
+    for entry in toc:
+        # 章のページ範囲の本文を結合
+        start, end = entry['start_page'], entry['end_page']
+        text = "\n".join([pages.get(p, "") for p in range(start, end+1)])
+        # 章単位要約（シンプルに先頭数文）
+        summary = text[:600].strip()
+        # チャンク化
+        chunks = chunk_text(text)
+        for idx, c in enumerate(chunks):
+            meta = {
+                "document_id": os.path.basename(path),
+                "toc_id": entry['toc_id'],
+                "chapter_title": entry['title'],
+                "page_start": start,
+                "page_end": end,
+                "chunk_index": idx,
+            }
+            documents.append(Document(text=c, metadata=meta))
+    return documents, toc
+
+# --- インデックス作成: TOC用サマリインデックス + チャンクインデックス ---
+def create_indices(data_dir=DATA_DIR, index_dir=INDEX_DIR):
+    os.makedirs(index_dir, exist_ok=True)
+
+    # 全チャンクを格納するリストと TOCサマリ用ドキュメント
+    all_chunk_docs = []
+    toc_summary_docs = []
+
+    for fname in os.listdir(data_dir):
+        if not fname.lower().endswith(".pdf"):
+            continue
+        path = os.path.join(data_dir, fname)
+        chunk_docs, toc = build_documents_from_pdf(path)
+        all_chunk_docs.extend(chunk_docs)
+        # TOCサマリ（章ごとに短い要約ドキュメントを作る）
+        for entry in toc:
+            # 簡易サマリ: ファイル・章名・ページ範囲
+            summary_text = f"{entry['title']} (pages {entry['start_page']}-{entry['end_page']})"
+            toc_meta = {"document_id": fname, "toc_id": entry['toc_id'], "title": entry['title']}
+            toc_summary_docs.append(Document(text=summary_text, metadata=toc_meta))
+
+    # チャンク用ベクトルインデックス
+    chunk_index = GPTVectorStoreIndex.from_documents(all_chunk_docs, service_context=service_context)
+    chunk_storage = StorageContext.from_defaults(persist_dir=os.path.join(index_dir,"chunks"))
+    chunk_index.storage_context.persist(persist_dir=os.path.join(index_dir,"chunks"))
+
+    # TOCサマリ用インデックス（軽量）
+    toc_index = GPTVectorStoreIndex.from_documents(toc_summary_docs, service_context=service_context)
+    toc_index.storage_context.persist(persist_dir=os.path.join(index_dir,"toc"))
+
+    print("indices created")
+    return
+
+# --- クエリ処理: TOC で章絞り→チャンク検索→LLM生成 ---
+def answer_query(query: str, index_dir=INDEX_DIR, top_toc=3, top_chunks=6):
+    # インデックス読み込み
+    toc_storage = StorageContext.from_defaults(persist_dir=os.path.join(index_dir,"toc"))
+    chunk_storage = StorageContext.from_defaults(persist_dir=os.path.join(index_dir,"chunks"))
+    toc_index = load_index_from_storage(toc_storage, service_context=service_context)
+    chunk_index = load_index_from_storage(chunk_storage, service_context=service_context)
+
+    # 1) TOCで章候補を検索
+    toc_retriever = toc_index.as_retriever(similarity_top_k=top_toc)
+    toc_docs = toc_retriever.retrieve(query)
+    top_toc_ids = [int(d.metadata.get("toc_id")) for d in toc_docs]
+
+    # 2) チャンクを絞って検索（metadata filterがサポートされれば使う）
+    chunk_retriever = chunk_index.as_retriever(similarity_top_k=top_chunks)
+    # filter で toc_id を指定できる場合（実装環境により異なる）
+    # 一覧を結合して検索する簡易方法: クエリに「章名」を付加
+    chapter_names = " ".join([d.metadata.get("title","") for d in toc_docs])
+    combined_query = f"{query}\n (調査対象章: {chapter_names})"
+    retrieved_chunks = chunk_retriever.retrieve(combined_query)
+
+    # 3) LLM に渡して回答（ここではシンプルにテキスト結合して推論）
+    # 実運用ではプロンプトで根拠提示と不確実性ポリシーを厳格に指定する
+    context_texts = []
+    sources = []
+    for d in retrieved_chunks:
+        meta = d.metadata
+        context_texts.append(d.get_text()[:1500])
+        sources.append(f"{meta.get('chapter_title')} (file:{meta.get('document_id')}, chunk:{meta.get('chunk_index')})")
+    prompt = f"以下の抜粋のみを根拠にして日本語で簡潔に回答してください。根拠がなければ「ドキュメントに情報がありません」と答えてください。\n\n=== 抜粋 ===\n{chr(10).join(context_texts)}\n\n=== 質問 ===\n{query}\n\n=== 指示 ===\n回答末尾に参照元（章名/ファイル）を列挙してください。"
+
+    # ここでLLMを呼ぶ（例：OpenAIや別のLLM）
+    # 例: response = llm_predictor.predict(prompt)
+    # 仮の応答（実行時には LLM を呼んでください）
+    response = "（ここにLLMからの生成結果が入ります）\n参照: " + "; ".join(sources[:3])
+    return {"answer": response, "sources": sources, "toc_candidates": [d.metadata for d in toc_docs]}
+
+# --- 実行例 ---
+if __name__ == "__main__":
+    # 1回目: indices を作成
+    create_indices()
+
+    # 2回目: クエリを投げる
+    r = answer_query("冷却ファンが動かないときの対処方法は？")
+    print(json.dumps(r, ensure_ascii=False, indent=2))
+```
+
+ポイントと実運用の拡張案
+- TOC 抽出：PDFに目次情報があればそれを優先利用。ない場合はフォントサイズや正規表現で見出しを抽出（pdfminer/pdfplumberでフォント情報を解析すると精度が上がる）。
+- メタデータ：各チャンクに必ず {document_id, toc_id, chapter_title, page_start, page_end, chunk_index, version} を保存。ベクトルDB（Qdrant等）にメタで保持すればフィルタ検索が可能。
+- 検索戦略：TOC→チャンク の2段階はコスト削減に有効。TOCには章サマリ（短文）を事前に埋め込みしておく。
+- 再ランキング：retrieverで得た候補に対してクロスエンコーダ（reranker）で精査すると精度が上がる。
+- 根拠ポリシー：LLMプロンプトで「与えられた抜粋以外を参照しない」「不確実なら回答を保留する」ことを明示。
+- ベクタDB：小規模ならFAISS、永続化＋スケールならQdrant/Milvus/Pineconeに置き換える。llamaindex は vector_store プラグインで接続可能。
+- 日本語対応：埋め込みモデルは日本語に強いもの（cl-tohoku系SBERTや multilingual モデル）を推奨。分かち書き・正規化を行うとBM25系検索が改善。
+
+次の確認（教えてください）
+1. データは PDF ですか？HTML/Markdown ですか？（どの形式かで読み込み方法が変わります）
+2. 使用したいベクタDBは何ですか？（FAISS / Qdrant / Pinecone / RedisVector 等）
+3. LLM と埋め込みはどれを使いますか？（OpenAI / Anthropic / ローカル LLM / sentence-transformers）
+4. 本番運用（長期運用、更新頻度、認証や社内オンプレ要件）はありますか？
+5. 実行可能なサンプルリポジトリを作成しましょうか？（はい→どのDB/LLMを使うか指定してください）
+
+これらを教えていただければ、Qdrant や Pinecone への接続コード、より精緻な TOC 抽出（フォントベース）や再ランキング実装、LLM プロンプトテンプレートを含む完全なサンプルを用意します。どれを優先しますか？
