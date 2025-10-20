@@ -85,3 +85,99 @@ QueryEngine の設計ポイント：
 - LLM の temp / max_tokens：生成の多様さと長さ
 
 もしコード例（実際の llama_index API を使ったサンプル）を見たいなら、使っているバージョンとどの LLM（OpenAI API, local LLM など）を教えてください。具体的なデータ構造（PDF、Webページ、DB）も教えていただければ、最適な retriever + synthesizer のテンプレートを提示します。どれを優先しますか？
+
+
+まず意図の確認をお願いします。自動評価だけでよいですか、それとも人手評価（ラベル付け／レビュー）も混ぜますか？また以下を教えてください：
+- 使用中の llama_index のバージョン（分かれば）
+- 使う LLM（OpenAI / local / Llama など）
+- データの種類と規模（FAQ/短文、長文、複数ドキュメント、PDF 等）
+- 「精度向上」の主目的（正確さ／根拠の有無／返答の一貫性／速度など）
+- 既に「正解回答」や「関連文書ラベル（relevance judgments）」があるか
+
+上記が分かれば、より具体的な評価スクリプトやチューニング手順を出します。ここではラフな評価フレームワークと実践的手順を示します。
+
+1) 全体方針（評価の流れ）
+- データ用意：検証用クエリセット + 正解回答（ゴールド） + 各クエリに対する関連チャンクのラベル（あれば理想）。
+- 分離：Train（チューニング） / Validation（ハイパー）/ Test（最終評価）に分ける。
+- 層別評価：retriever 単体評価、reranker（あるなら）評価、synthesizer（応答合成）単体評価、エンドツーエンド（QueryEngine）評価。
+- 自動評価 + 人手評価の組合せ：自動でスコアを回して候補絞り、人手で最終的に品質を判断。
+
+2) Retriever の評価（目的：関連チャンクが上位に来るか）
+- 指標：Recall@k（必須）、Precision@k、MRR（Mean Reciprocal Rank）、MAP、NDCG。
+  - recall@k = (クエリに対して少なくとも1つゴールドチャンクが top-k に入っている割合)
+  - MRR = 1 / rank_of_first_relevant averaged
+- 実施方法：
+  - まず大量の候補（fetch_k）を取っておき、ラベルと照合して指標を算出。
+  - 異なる埋め込みモデル／ベクトルストア／k を比較。
+- ツール：pytrec_eval、ir-measures
+- チューニング対象：embedding model, index type, chunk_size, overlap, k, MMR λ, metadata filter
+
+3) Reranker（ある場合）の評価
+- 指標：同じく MRR, MAP, Precision@k、または pairwise accuracy（正のペアが上になる割合）
+- 実施方法：retriever の上位候補を reranker にかけ、スコア順で再評価して指標計算。
+- トレーニング：pairwise（RankNet/hinge）や listwise 損失を用いると効果的。
+
+4) Response synthesizer（合成／生成）評価
+- 指標（自動）：
+  - QA タイプ：Exact Match (EM), F1（SQuAD スタイル）
+  - 要約タイプ：ROUGE (R1/R2/L)、BLEU（必要なら）、BERTScore、BLEURT（品質の深い評価）
+  - 根拠評価：citation coverage（回答内に提示した出典がゴールドに含まれる割合）、overlap-based recall（回答の根拠となるトークンが取得チャンクに含まれているか）
+  - 信頼性（正確性）チェック：NLI/entailment ベースで答えが取得チャンクに含まれているかを判定（contradiction/neutral/entailment）
+- 人手評価：正確性、役立ち度、明瞭性、根拠の妥当性（5点リッカートなど）、および hallucination の有無判定
+- 実施方法：
+  - 自動：各クエリで生成回答とゴールドを比較して EM/F1/ROUGE 等を計算。
+  - Faithfulness：生成文の主張を個々の参照文と NLI で検証。あるいは LLM に「この回答のどの文が取得したソースに基づくか」を抽出させる。
+  - 記録：生成毎に使用されたチャンクの ID とスコアをログに残す（後で照合・解析）。
+- チューニング対象：synth strategy（stuff/map_reduce/refine/tree）、prompt 設計、max_tokens, temperature、top_p、chain-of-thought の有無、引用フォーマット
+
+5) エンドツーエンド評価（QueryEngine）
+- 指標：タスクに応じて EM/F1（QA）、Accuracy（分類）、Mean Opinion Score（MOS）や人手評価。
+- 根拠ベース評価：回答と共に返した citations が正解文献に一致する割合／回答が参照したチャンクに含まれる情報だけで正しいか。
+- レイテンシとコストの評価：平均応答時間、API コール回数、トークンコスト
+
+6) ハルシネーション／信頼性対策の評価
+- 自動手法：
+  - NLIベース検証：生成文とソースのエンタイトルメント判定（transformers の NLI モデル使用）
+  - QA逆検証：生成した答えから新たな質問を生成し、取得チャンクで答えられるかチェック
+  - Lexical overlap / evidence coverage：回答中の事実表現が取得チャンクにどれだけマッチするか
+- 人手：サンプルをランダム抽出して false claim をラベリング
+
+7) 実験設計（A/B, ablation, sweep）
+- 比較軸：retriever type (dense / sparse / hybrid)、k、synth strategy（stuff/map_reduce/refine）、reranker ON/OFF、chunk_size
+- 手順：
+  - 固定 seed で各構成を複数回評価（確率的要素がある場合）
+  - 結果を表にまとめ（自動指標 + 人手スコア + レイテンシ + コスト）
+  - 統計検定（t-test / bootstrap）で差の有意性確認
+- ハイパーパラメータ探索：Optuna や grid search（k, fetch_k, MMR λ, temperature など）
+
+8) モニタリング／運用での評価
+- ログ：クエリ、retrieved ids, scores, final answer, LLM temperature, tokens used
+- 指標の継続監視：weekly recall@k, hallucination_rate, avg_latency
+- ドリフト検出：クエリ分布や retrieval performance の下落をウォッチ
+- A/B テスト：新戦略を一部トラフィックで運用し、ユーザーメトリクス（満足度、解決率）を比較
+
+9) 実践で使えるツールとライブラリ
+- retrieval eval: pytrec_eval, ir-measures
+- text eval: rouge_score, sacrebleu, bert-score, BLEURT
+- NLI/entailment: transformers (roberta-large-mnli 等)
+- ベクトル検索: FAISS, Milvus, Weaviate, chroma
+- ライブラリ: sentence-transformers, datasets (HuggingFace), pandas, scikit-learn
+- ハイパー探索: Optuna
+
+10) 簡単な実装例（考え方のスニペット）
+- Retriever の recall@k（擬コード）
+  - ① 各クエリで top_k を取得 → 候補 id リスト
+  - ② ゴールド関連チャンク id と照合して recall@k を計算
+- QA の EM / F1（Python 概要）
+  - 正規化（lower, strip, punctuation除去）
+  - EM = normalized_pred == normalized_gold
+  - F1 = token-level F1（precision/recall/harmonic）
+
+（必要なら実コードを用意します。pytrec_eval の使い方や、NLI を使った自動faithfulnessチェッカのサンプルも出せます）
+
+11) 優先度の提案（短期→中期→長期）
+- 短期：retriever の recall@k を改善（適切な chunk_size, embedding model, fetch_k）。自動指標で候補を絞る。
+- 中期：reranker を導入して上位の品質を担保。synth strategy を map_reduce / refine に切替えて出力品質を上げる。
+- 長期：人手評価のラベルを増やし、end-to-end 学習（retrieval + rerank の学習やRL-based fine-tune）や出典付き応答の堅牢化を行う。
+
+最後に：具体的なコード（retrieval 評価スクリプト、LLM を使った faithfulness チェッカ、map_reduce の評価例）を出しますか？それともまずは「どの指標を採用するか」のテンプレート（CSV でログを取る項目等）を作りましょうか。どれを優先しますか？
