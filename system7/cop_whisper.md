@@ -120,3 +120,220 @@ with open("diarized_transcript.srt", "w", encoding="utf-8") as srt:
 - 1ファイルで良いか、フォルダ内の複数ファイルをバッチ処理したいか
 
 希望を教えてください。必要なら上のスクリプトをあなたの環境用にカスタマイズして差し上げます。
+
+
+
+pyannote.audioとfaster_whisperを使用してwavファイルを話者分離付きの時系列テキストに変換するPythonコードを提示します。
+
+## 必要なライブラリのインストール
+
+```bash
+pip install pyannote.audio faster-whisper torch torchaudio
+```
+
+## メインコード
+
+```python
+import torch
+from pyannote.audio import Pipeline
+from faster_whisper import WhisperModel
+import wave
+from datetime import timedelta
+
+class SpeakerDiarization:
+    def __init__(self, whisper_model_size="base", device="auto"):
+        """
+        初期化
+        Args:
+            whisper_model_size: Whisperモデルのサイズ (tiny, base, small, medium, large-v2など)
+            device: 使用するデバイス (auto, cpu, cuda)
+        """
+        # Whisperモデルの初期化
+        self.whisper_model = WhisperModel(whisper_model_size, device=device)
+        
+        # pyannote.audioの話者分離パイプラインの初期化
+        # Hugging Face tokenが必要な場合があります
+        self.diarization_pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1",
+            use_auth_token="YOUR_HUGGINGFACE_TOKEN"  # 必要に応じて設定
+        )
+        
+    def format_time(self, seconds):
+        """秒を時:分:秒形式に変換"""
+        return str(timedelta(seconds=int(seconds)))
+    
+    def transcribe_and_diarize(self, audio_file_path):
+        """
+        音声ファイルを話者分離付きで文字起こし
+        Args:
+            audio_file_path: wavファイルのパス
+        Returns:
+            話者別時系列テキストのリスト
+        """
+        print("音声認識を開始...")
+        
+        # Whisperで音声認識
+        segments, info = self.whisper_model.transcribe(
+            audio_file_path,
+            beam_size=5,
+            language="ja"  # 日本語を指定
+        )
+        
+        print(f"検出された言語: {info.language} (信頼度: {info.language_probability:.2f})")
+        
+        # 音声認識結果を辞書形式で保存
+        transcription_segments = []
+        for segment in segments:
+            transcription_segments.append({
+                'start': segment.start,
+                'end': segment.end,
+                'text': segment.text
+            })
+        
+        print("話者分離を開始...")
+        
+        # pyannote.audioで話者分離
+        diarization = self.diarization_pipeline(audio_file_path)
+        
+        # 話者分離結果を辞書形式で保存
+        speaker_segments = []
+        for turn, _, speaker in diarization.itertracks(yield_label=True):
+            speaker_segments.append({
+                'start': turn.start,
+                'end': turn.end,
+                'speaker': speaker
+            })
+        
+        print("音声認識結果と話者分離結果を統合...")
+        
+        # 音声認識結果と話者分離結果を統合
+        final_results = self.merge_transcription_and_diarization(
+            transcription_segments, speaker_segments
+        )
+        
+        return final_results
+    
+    def merge_transcription_and_diarization(self, transcription_segments, speaker_segments):
+        """音声認識結果と話者分離結果を統合"""
+        final_results = []
+        
+        for trans_segment in transcription_segments:
+            trans_start = trans_segment['start']
+            trans_end = trans_segment['end']
+            trans_text = trans_segment['text']
+            
+            # この音声認識セグメントと最も重複する話者を見つける
+            best_speaker = "不明"
+            max_overlap = 0
+            
+            for speaker_segment in speaker_segments:
+                speaker_start = speaker_segment['start']
+                speaker_end = speaker_segment['end']
+                speaker_label = speaker_segment['speaker']
+                
+                # 重複部分の計算
+                overlap_start = max(trans_start, speaker_start)
+                overlap_end = min(trans_end, speaker_end)
+                overlap_duration = max(0, overlap_end - overlap_start)
+                
+                if overlap_duration > max_overlap:
+                    max_overlap = overlap_duration
+                    best_speaker = speaker_label
+            
+            final_results.append({
+                'start_time': trans_start,
+                'end_time': trans_end,
+                'speaker': best_speaker,
+                'text': trans_text.strip()
+            })
+        
+        return final_results
+    
+    def save_results(self, results, output_file="transcription_with_speakers.txt"):
+        """結果をファイルに保存"""
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write("話者分離付き音声認識結果\n")
+            f.write("=" * 50 + "\n\n")
+            
+            for result in results:
+                start_time = self.format_time(result['start_time'])
+                end_time = self.format_time(result['end_time'])
+                speaker = result['speaker']
+                text = result['text']
+                
+                f.write(f"[{start_time} - {end_time}] {speaker}: {text}\n")
+        
+        print(f"結果を {output_file} に保存しました。")
+    
+    def print_results(self, results):
+        """結果をコンソールに出力"""
+        print("\n話者分離付き音声認識結果:")
+        print("=" * 50)
+        
+        for result in results:
+            start_time = self.format_time(result['start_time'])
+            end_time = self.format_time(result['end_time'])
+            speaker = result['speaker']
+            text = result['text']
+            
+            print(f"[{start_time} - {end_time}] {speaker}: {text}")
+
+def main():
+    """メイン関数"""
+    # 音声ファイルのパスを指定
+    audio_file = "input_audio.wav"  # ここにwavファイルのパスを指定
+    
+    # 話者分離オブジェクトの作成
+    diarizer = SpeakerDiarization(
+        whisper_model_size="base",  # モデルサイズを調整可能
+        device="auto"  # GPUが利用可能な場合は自動的に使用
+    )
+    
+    try:
+        # 音声認識と話者分離を実行
+        results = diarizer.transcribe_and_diarize(audio_file)
+        
+        # 結果を画面に表示
+        diarizer.print_results(results)
+        
+        # 結果をファイルに保存
+        diarizer.save_results(results, "output_transcription.txt")
+        
+    except Exception as e:
+        print(f"エラーが発生しました: {e}")
+
+if __name__ == "__main__":
+    main()
+```
+
+## 使用方法
+
+1. **Hugging Face トークンの設定**（pyannote.audioで必要な場合）:
+   ```python
+   # Hugging Faceアカウントでトークンを取得し、コード内で設定
+   use_auth_token="YOUR_HUGGINGFACE_TOKEN"
+   ```
+
+2. **音声ファイルの準備**:
+   - `input_audio.wav`を実際のwavファイルパスに変更
+
+3. **実行**:
+   ```bash
+   python speaker_diarization.py
+   ```
+
+## 出力例
+
+```
+[0:00:00 - 0:00:05] SPEAKER_00: こんにちは、今日はお忙しい中お時間をいただき、ありがとうございます。
+[0:00:06 - 0:00:10] SPEAKER_01: こちらこそ、よろしくお願いします。
+[0:00:11 - 0:00:15] SPEAKER_00: それでは、早速始めさせていただきます。
+```
+
+## 設定オプション
+
+- **Whisperモデルサイズ**: `tiny`, `base`, `small`, `medium`, `large-v2`
+- **デバイス**: `auto`, `cpu`, `cuda`（GPU使用時）
+- **言語**: `language="ja"`で日本語を指定
+
+このコードで、wavファイルから話者分離付きの時系列テキストを生成できます。
