@@ -1,0 +1,90 @@
+# Domain-specific configurations
+domains:
+  academic_papers:
+    name: "学術論文"
+    description: "研究論文、技術論文、学会発表資料"
+    
+    # Document characteristics
+    characteristics:
+      average_length: 50000  # tokens
+      structure_complexity: "high"
+      technical_terminology: "high"
+      citation_density: "high"
+      
+    # Chunking preferences
+    chunking:
+      preferred_strategies: ["semantic", "recursive"]
+      chunk_size_range: [512, 1024]
+      respect_sections: true
+      preserve_citations: true
+      
+    # Question generation
+    question_generation:
+      focus_areas:
+        - methodology
+        - results
+        - conclusions
+        - related_work
+      question_complexity: ["simple", "medium", "complex"]
+      
+    # Evaluation criteria
+    evaluation_weights:
+      factual_accuracy: 0.4
+      completeness: 0.3
+      citation_preservation: 0.2
+      technical_accuracy: 0.1
+
+  product_manuals:
+    name: "製品マニュアル"
+    description: "製品説明書、操作マニュアル、技術仕様書"
+    
+    # Document characteristics
+    characteristics:
+      average_length: 30000  # tokens
+      structure_complexity: "medium"
+      procedural_content: "high"
+      diagram_density: "high"
+      
+    # Chunking preferences
+    chunking:
+      preferred_strategies: ["fixed_size", "sentence_based"]
+      chunk_size_range: [256, 512]
+      respect_sections: true
+      preserve_procedures: true
+      
+    # Question generation
+    question_generation:
+      focus_areas:
+        - procedures
+        - specifications
+        - troubleshooting
+        - safety_information
+      question_complexity: ["simple", "medium"]
+      
+    # Evaluation criteria
+    evaluation_weights:
+      procedural_accuracy: 0.4
+      completeness: 0.3
+      clarity: 0.2
+      safety_preservation: 0.1
+
+# Cross-domain settings
+cross_domain:
+  enable_domain_adaptation: true
+  domain_classification_threshold: 0.8
+  
+  # Domain-agnostic metrics
+  universal_metrics:
+    - answer_relevancy
+    - context_precision
+    - rouge_scores
+    
+  # Domain-specific metrics mapping
+  domain_metrics:
+    academic_papers:
+      - citation_preservation
+      - technical_terminology_accuracy
+      
+    product_manuals:
+      - procedural_accuracy
+      - safety_information_preservation

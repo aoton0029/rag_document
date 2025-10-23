@@ -1,0 +1,70 @@
+# チャンキング設定
+chunking_strategies:
+  # 固定サイズチャンキング
+  fixed_size:
+    chunk_size: 1024
+    chunk_overlap: 50
+    separator: "\n\n"
+    
+  # セマンティックチャンキング
+  semantic:
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    threshold: 0.7
+    min_chunk_size: 100
+    max_chunk_size: 2000
+    
+  # 階層チャンキング（論文PDF対応）
+  hierarchical:
+    # 論文の構造を意識したチャンキング
+    sections:
+      title: 
+        chunk_size: 512
+        overlap: 0
+        importance: 1.0
+      abstract:
+        chunk_size: 1024
+        overlap: 20
+        importance: 0.9
+      introduction:
+        chunk_size: 1536
+        overlap: 100
+        importance: 0.8
+      methodology:
+        chunk_size: 2048
+        overlap: 150
+        importance: 0.9
+      results:
+        chunk_size: 1536
+        overlap: 100
+        importance: 0.8
+      conclusion:
+        chunk_size: 1024
+        overlap: 50
+        importance: 0.9
+      references:
+        chunk_size: 512
+        overlap: 0
+        importance: 0.3
+    
+  # 文書構造チャンキング
+  document_structure:
+    use_headers: true
+    header_levels: [1, 2, 3]
+    preserve_structure: true
+    chunk_by_section: true
+    
+  # 自然言語処理チャンキング
+  nlp:
+    method: "spacy"  # spacy, nltk
+    language: "ja"
+    sentence_splitting: true
+    paragraph_splitting: true
+    
+# チャンキング品質評価
+evaluation:
+  metrics:
+    - "coherence"
+    - "coverage"
+    - "overlap_ratio"
+    - "chunk_size_distribution"
+    - "semantic_similarity"

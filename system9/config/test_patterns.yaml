@@ -1,0 +1,129 @@
+# Test pattern configurations for RAG evaluation framework
+test_patterns:
+  # Basic patterns - single variable change
+  basic_patterns:
+    chunking_comparison:
+      description: "Compare different chunking strategies"
+      variables:
+        chunking_strategy: ["semantic", "fixed_size", "sentence_based", "recursive", "token_based"]
+      fixed_parameters:
+        embedding_model: "ollama_qwen"
+        llm_model: "qwen3_32b"
+        retrieval_k: 5
+        
+    embedding_comparison:
+      description: "Compare different embedding models"
+      variables:
+        embedding_model: ["ollama_qwen", "huggingface", "openai"]
+      fixed_parameters:
+        chunking_strategy: "semantic"
+        llm_model: "qwen3_32b"
+        retrieval_k: 5
+        
+    llm_comparison:
+      description: "Compare different LLM models"
+      variables:
+        llm_model: ["qwen3_32b", "gpt_oss_120b"]
+      fixed_parameters:
+        chunking_strategy: "semantic"
+        embedding_model: "ollama_qwen"
+        retrieval_k: 5
+        
+    retrieval_k_comparison:
+      description: "Compare different retrieval k values"
+      variables:
+        retrieval_k: [1, 3, 5, 10, 15, 20]
+      fixed_parameters:
+        chunking_strategy: "semantic"
+        embedding_model: "ollama_qwen"
+        llm_model: "qwen3_32b"
+
+  # Advanced patterns - multi-variable optimization
+  advanced_patterns:
+    chunking_embedding_optimization:
+      description: "Optimize chunking and embedding combination"
+      variables:
+        chunking_strategy: ["semantic", "recursive"]
+        embedding_model: ["ollama_qwen", "huggingface"]
+        chunk_size: [256, 512, 1024]
+      fixed_parameters:
+        llm_model: "qwen3_32b"
+        retrieval_k: 5
+        
+    full_pipeline_optimization:
+      description: "Complete pipeline optimization"
+      variables:
+        chunking_strategy: ["semantic", "recursive"]
+        embedding_model: ["ollama_qwen", "huggingface"]
+        llm_model: ["qwen3_32b", "gpt_oss_120b"]
+        retrieval_k: [3, 5, 10]
+      constraints:
+        max_combinations: 24  # Limit to manageable number
+
+  # Domain-specific patterns
+  domain_patterns:
+    academic_paper_optimization:
+      description: "Optimization for academic papers"
+      domain: "academic_papers"
+      variables:
+        chunking_strategy: ["semantic", "recursive"]
+        chunk_size: [512, 1024]
+        chunk_overlap: [50, 100, 200]
+      fixed_parameters:
+        embedding_model: "ollama_qwen"
+        llm_model: "qwen3_32b"
+        
+    manual_optimization:
+      description: "Optimization for product manuals"
+      domain: "product_manuals"
+      variables:
+        chunking_strategy: ["fixed_size", "sentence_based"]
+        chunk_size: [256, 512]
+        retrieval_k: [3, 5, 8]
+      fixed_parameters:
+        embedding_model: "ollama_qwen"
+        llm_model: "qwen3_32b"
+
+# Experimental design
+experimental_design:
+  # A/B testing configurations
+  ab_testing:
+    baseline_configuration:
+      chunking_strategy: "semantic"
+      embedding_model: "ollama_qwen"
+      llm_model: "qwen3_32b"
+      retrieval_k: 5
+      
+    statistical_power: 0.8
+    significance_level: 0.05
+    minimum_effect_size: 0.1
+    
+  # Cross-validation settings
+  cross_validation:
+    k_folds: 5
+    stratified: true
+    random_seed: 42
+    
+  # Ablation studies
+  ablation_studies:
+    enable_chunking_ablation: true
+    enable_embedding_ablation: true
+    enable_retrieval_ablation: true
+    enable_generation_ablation: true
+
+# Resource management
+resource_management:
+  parallel_execution:
+    max_workers: 4
+    gpu_allocation: "auto"
+    memory_limit: "16GB"
+    
+  caching:
+    enable_embedding_cache: true
+    enable_retrieval_cache: true
+    cache_ttl: 3600  # seconds
+    
+  monitoring:
+    log_level: "INFO"
+    enable_progress_bars: true
+    save_intermediate_results: true

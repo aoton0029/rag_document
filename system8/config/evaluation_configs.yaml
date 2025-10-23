@@ -1,0 +1,113 @@
+# 評価設定
+evaluation_metrics:
+  # RAGAS評価指標
+  ragas:
+    faithfulness:
+      enabled: true
+      weight: 0.25
+      description: "生成された回答がソース文書に忠実であるかを評価"
+      
+    answer_relevancy:
+      enabled: true
+      weight: 0.25
+      description: "生成された回答が質問に関連しているかを評価"
+      
+    context_precision:
+      enabled: true
+      weight: 0.25
+      description: "検索されたコンテキストの精度を評価"
+      
+    context_recall:
+      enabled: true
+      weight: 0.25
+      description: "検索されたコンテキストの再現率を評価"
+      
+  # 追加評価指標
+  custom_metrics:
+    semantic_similarity:
+      enabled: true
+      model: "sentence-transformers/all-MiniLM-L6-v2"
+      threshold: 0.7
+      
+    rouge_scores:
+      enabled: true
+      rouge_types: ["rouge1", "rouge2", "rougeL"]
+      
+    bleu_score:
+      enabled: true
+      n_grams: [1, 2, 3, 4]
+      
+    bertscore:
+      enabled: true
+      model: "microsoft/deberta-xlarge-mnli"
+      language: "ja"
+      
+    # 検索評価
+    retrieval_metrics:
+      precision_at_k: [1, 3, 5, 10]
+      recall_at_k: [1, 3, 5, 10]
+      map_score: true  # Mean Average Precision
+      mrr_score: true  # Mean Reciprocal Rank
+      ndcg_score: true # Normalized Discounted Cumulative Gain
+
+# 評価データセット
+datasets:
+  # 自動生成データセット
+  synthetic:
+    size: 100
+    question_types:
+      - "factual"
+      - "analytical" 
+      - "comparison"
+      - "summary"
+    difficulty_levels:
+      - "easy"
+      - "medium"
+      - "hard"
+      
+  # ベンチマークデータセット
+  benchmark:
+    jaqket:
+      enabled: false
+      path: "data/jaqket/test.json"
+    jsquad:
+      enabled: false
+      path: "data/jsquad/test.json"
+    custom:
+      enabled: true
+      path: "data/custom/evaluation_set.json"
+
+# 評価実行設定
+execution:
+  parallel_processing: true
+  max_workers: 4
+  timeout_per_question: 60
+  save_detailed_results: true
+  
+  # 結果出力設定
+  output:
+    format: ["json", "csv", "html"]
+    include_traces: true
+    save_intermediates: true
+    
+  # 比較分析
+  comparison:
+    statistical_tests: true
+    significance_level: 0.05
+    effect_size_calculation: true
+    
+# 可視化設定  
+visualization:
+  charts:
+    - "radar_chart"
+    - "bar_chart"
+    - "heatmap"
+    - "scatter_plot"
+    - "box_plot"
+    
+  export_formats: ["png", "svg", "pdf"]
+  
+  dashboard:
+    enabled: true
+    auto_refresh: 30  # seconds
+    real_time_updates: true

@@ -1,0 +1,95 @@
+# 埋め込みモデル設定
+embedding_models:
+  # OpenAI系
+  openai:
+    text-embedding-ada-002:
+      api_key_env: "OPENAI_API_KEY"
+      dimensions: 1536
+      max_tokens: 8191
+      cost_per_1k_tokens: 0.0001
+      
+  # Hugging Face系
+  huggingface:
+    sentence-transformers/all-MiniLM-L6-v2:
+      model_name: "sentence-transformers/all-MiniLM-L6-v2"
+      dimensions: 384
+      max_sequence_length: 512
+      local: true
+      
+    sentence-transformers/all-mpnet-base-v2:
+      model_name: "sentence-transformers/all-mpnet-base-v2"
+      dimensions: 768
+      max_sequence_length: 512
+      local: true
+      
+    intfloat/multilingual-e5-large:
+      model_name: "intfloat/multilingual-e5-large"
+      dimensions: 1024
+      max_sequence_length: 512
+      local: true
+      multilingual: true
+      
+  # 日本語対応モデル
+  japanese:
+    cl-tohoku/bert-base-japanese-whole-word-masking:
+      model_name: "cl-tohoku/bert-base-japanese-whole-word-masking"
+      dimensions: 768
+      max_sequence_length: 512
+      language: "ja"
+      local: true
+      
+    sonoisa/sentence-bert-base-ja-mean-tokens-v2:
+      model_name: "sonoisa/sentence-bert-base-ja-mean-tokens-v2"
+      dimensions: 768
+      max_sequence_length: 512
+      language: "ja"
+      local: true
+      
+  # Ollama系（ローカル実行）
+  ollama:
+    nomic-embed-text:
+      model_name: "nomic-embed-text"
+      base_url: "http://localhost:11434"
+      dimensions: 768
+      local: true
+      
+    mxbai-embed-large:
+      model_name: "mxbai-embed-large"
+      base_url: "http://localhost:11434"
+      dimensions: 1024
+      local: true
+
+# 埋め込み処理設定
+processing:
+  batch_size: 32
+  max_retries: 3
+  timeout: 30
+  normalize_embeddings: true
+  
+  # 前処理オプション
+  preprocessing:
+    remove_special_chars: false
+    lowercase: false
+    remove_stopwords: false
+    stemming: false
+    lemmatization: false
+    
+  # 後処理オプション
+  postprocessing:
+    dimension_reduction: false
+    pca_components: null
+    normalize_l2: true
+
+# 埋め込み品質評価
+evaluation:
+  similarity_metrics:
+    - "cosine"
+    - "euclidean" 
+    - "manhattan"
+    - "dot_product"
+    
+  benchmarks:
+    - "semantic_textual_similarity"
+    - "information_retrieval"
+    - "clustering"
+    - "classification"

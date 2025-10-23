@@ -1,0 +1,37 @@
+# Tokenizer configurations
+tokenizers:
+  openai:
+    encoding_name: "cl100k_base"
+    model_name: "gpt-4"
+    
+  tiktoken:
+    encoding_name: "p50k_base"
+    model_name: "text-davinci-003"
+    
+  huggingface:
+    tokenizer_name: "bert-base-multilingual-cased"
+    
+  japanese:
+    tokenizer_name: "cl-tohoku/bert-base-japanese-whole-word-masking"
+
+# Token counting settings
+token_settings:
+  max_input_tokens: 4096
+  max_output_tokens: 2048
+  chunk_token_budget: 1000
+  context_token_budget: 3000
+  
+# Language specific settings
+language_settings:
+  japanese:
+    sentence_splitters:
+      - "。"
+      - "！"
+      - "？"
+    paragraph_markers:
+      - "\n\n"
+      - "　　"
+    ignore_patterns:
+      - "図\\d+"
+      - "表\\d+"
+      - "\\(\\d+\\)"

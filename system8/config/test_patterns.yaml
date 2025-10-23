@@ -1,0 +1,138 @@
+# テストパターン設定
+test_patterns:
+  # 基本パターン
+  basic_patterns:
+    pattern_1:
+      name: "Basic OpenAI + Ada"
+      chunking: "fixed_size"
+      embedding: "openai/text-embedding-ada-002"
+      llm: "openai/gpt-3.5-turbo"
+      retrieval: "semantic_search"
+      
+    pattern_2:
+      name: "Sentence Transformers + Ollama"
+      chunking: "semantic"
+      embedding: "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+      llm: "ollama/llama2"
+      retrieval: "hybrid_search"
+      
+    pattern_3:
+      name: "Japanese Optimized"
+      chunking: "hierarchical"
+      embedding: "japanese/sonoisa/sentence-bert-base-ja-mean-tokens-v2"
+      llm: "ollama/elyza-japanese-llama2"
+      retrieval: "semantic_search"
+      
+  # 論文PDF特化パターン
+  academic_patterns:
+    academic_basic:
+      name: "Academic Basic"
+      chunking: "document_structure"
+      embedding: "huggingface/intfloat/multilingual-e5-large"
+      llm: "openai/gpt-4"
+      retrieval: "hierarchical_search"
+      document_type: "academic_paper"
+      
+    academic_advanced:
+      name: "Academic Advanced"
+      chunking: "hierarchical"
+      embedding: "openai/text-embedding-ada-002"
+      llm: "openai/gpt-4-turbo"
+      retrieval: "graph_rag"
+      document_type: "academic_paper"
+      use_section_weights: true
+      
+    multilingual_academic:
+      name: "Multilingual Academic"
+      chunking: "nlp"
+      embedding: "huggingface/intfloat/multilingual-e5-large"
+      llm: "anthropic/claude-3"
+      retrieval: "ensemble_search"
+      document_type: "academic_paper"
+      languages: ["ja", "en"]
+      
+  # 高度なパターン
+  advanced_patterns:
+    ensemble_1:
+      name: "Embedding Ensemble"
+      chunking: "hierarchical"
+      embedding: 
+        - "openai/text-embedding-ada-002"
+        - "huggingface/sentence-transformers/all-mpnet-base-v2"
+        - "japanese/sonoisa/sentence-bert-base-ja-mean-tokens-v2"
+      llm: "openai/gpt-4"
+      retrieval: "weighted_ensemble"
+      ensemble_weights: [0.4, 0.3, 0.3]
+      
+    multi_stage:
+      name: "Multi-stage Retrieval"
+      chunking: "document_structure"
+      embedding: "openai/text-embedding-ada-002"
+      llm: "openai/gpt-4"
+      retrieval: "multi_stage"
+      stages:
+        - "coarse_search"
+        - "fine_search"
+        - "reranking"
+        
+    graph_enhanced:
+      name: "Graph Enhanced RAG"
+      chunking: "hierarchical"
+      embedding: "huggingface/intfloat/multilingual-e5-large"
+      llm: "openai/gpt-4"
+      retrieval: "graph_rag"
+      graph_construction: "entity_relationship"
+      
+# パターン組み合わせテスト
+combination_tests:
+  chunking_comparison:
+    name: "Chunking Strategy Comparison"
+    fixed_params:
+      embedding: "openai/text-embedding-ada-002"
+      llm: "openai/gpt-3.5-turbo"
+      retrieval: "semantic_search"
+    variable_params:
+      chunking: ["fixed_size", "semantic", "hierarchical", "document_structure"]
+      
+  embedding_comparison:
+    name: "Embedding Model Comparison" 
+    fixed_params:
+      chunking: "hierarchical"
+      llm: "openai/gpt-3.5-turbo"
+      retrieval: "semantic_search"
+    variable_params:
+      embedding:
+        - "openai/text-embedding-ada-002"
+        - "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+        - "huggingface/sentence-transformers/all-mpnet-base-v2"
+        - "japanese/sonoisa/sentence-bert-base-ja-mean-tokens-v2"
+        
+  llm_comparison:
+    name: "LLM Model Comparison"
+    fixed_params:
+      chunking: "hierarchical"
+      embedding: "openai/text-embedding-ada-002"
+      retrieval: "semantic_search"
+    variable_params:
+      llm:
+        - "openai/gpt-3.5-turbo"
+        - "openai/gpt-4"
+        - "ollama/llama2"
+        - "anthropic/claude-3"
+
+# 実験設定
+experiment_config:
+  repetitions: 3  # 各パターンの実行回数
+  randomization: true
+  cross_validation: false
+  
+  # 統計分析
+  statistical_analysis:
+    significance_test: "t_test"
+    multiple_comparison_correction: "bonferroni"
+    confidence_level: 0.95
+    
+  # 結果保存
+  save_results: true
+  result_format: "json"
+  include_metadata: true

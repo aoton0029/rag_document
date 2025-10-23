@@ -1,0 +1,52 @@
+# LLM configurations for RAG evaluation framework
+llm_models:
+  qwen3_32b:
+    provider: "vllm"
+    model_name: "Qwen/Qwen3-32B"
+    temperature: 0.1
+    max_tokens: 2048
+    top_p: 0.9
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+    
+  gpt_oss_120b:
+    provider: "vllm"
+    model_name: "openai/gpt-oss-120b"
+    temperature: 0.1
+    max_tokens: 2048
+    top_p: 0.9
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+    
+  ollama_local:
+    provider: "ollama"
+    model_name: "llama3:70b"
+    temperature: 0.1
+    max_tokens: 2048
+
+# Generation parameters
+generation_params:
+  system_prompt: |
+    あなたは日本語の文書を理解し、与えられたコンテキストに基づいて正確で有用な回答を提供するアシスタントです。
+    コンテキストの情報のみを使用し、推測や一般知識に頼らないでください。
+    
+  user_prompt_template: |
+    以下のコンテキストを参考に質問に答えてください：
+    
+    コンテキスト：
+    {context}
+    
+    質問：{question}
+    
+    回答：
+
+# Evaluation settings
+evaluation:
+  response_quality_metrics:
+    - faithfulness
+    - answer_relevancy
+    - context_precision
+    - context_recall
+    - rouge_scores
+    - bert_score
+    - semantic_similarity

@@ -1,0 +1,84 @@
+# Evaluation configurations for RAG system
+evaluation_framework:
+  # RAGAS evaluation metrics
+  ragas_metrics:
+    faithfulness:
+      enabled: true
+      weight: 0.25
+      
+    answer_relevancy:
+      enabled: true
+      weight: 0.25
+      
+    context_precision:
+      enabled: true
+      weight: 0.25
+      
+    context_recall:
+      enabled: true
+      weight: 0.25
+
+  # Traditional NLP metrics
+  nlp_metrics:
+    rouge:
+      enabled: true
+      variants: ["rouge-1", "rouge-2", "rouge-l"]
+      
+    bert_score:
+      enabled: true
+      model: "bert-base-multilingual-cased"
+      
+    bleu:
+      enabled: false
+      
+    meteor:
+      enabled: false
+
+  # Retrieval evaluation
+  retrieval_metrics:
+    precision_at_k: [1, 3, 5, 10, 20]
+    recall_at_k: [1, 3, 5, 10, 20]
+    f1_at_k: [1, 3, 5, 10, 20]
+    mrr: true
+    ndcg: [1, 3, 5, 10, 20]
+    map: true
+
+  # Custom evaluation criteria
+  custom_metrics:
+    factual_accuracy:
+      enabled: true
+      human_evaluation: false
+      
+    completeness:
+      enabled: true
+      
+    coherence:
+      enabled: true
+      
+    readability:
+      enabled: true
+
+# Evaluation dataset settings
+dataset:
+  test_size: 0.2
+  validation_size: 0.1
+  random_seed: 42
+  
+  question_types:
+    - factual
+    - analytical
+    - comparative
+    - summarization
+    - reasoning
+
+# Output settings
+output:
+  save_detailed_results: true
+  generate_plots: true
+  export_formats: ["json", "csv", "html"]
+  
+# Benchmark settings
+benchmark:
+  runs_per_configuration: 3
+  confidence_interval: 0.95
+  statistical_tests: ["t-test", "wilcoxon"]

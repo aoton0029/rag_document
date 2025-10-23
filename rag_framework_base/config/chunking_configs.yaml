@@ -1,0 +1,36 @@
+# Chunking configurations for RAG evaluation framework
+chunking_strategies:
+  semantic:
+    chunk_size: 512
+    chunk_overlap: 50
+    separator: "\n\n"
+    tokenizer: "cl100k_base"
+    
+  fixed_size:
+    chunk_size: 1024
+    chunk_overlap: 100
+    tokenizer: "cl100k_base"
+    
+  sentence_based:
+    max_chunk_size: 800
+    min_chunk_size: 100
+    overlap_sentences: 2
+    
+  recursive:
+    chunk_size: 1000
+    chunk_overlap: 200
+    separators: ["\n\n", "\n", " ", ""]
+    
+  token_based:
+    chunk_size: 256
+    chunk_overlap: 25
+    tokenizer: "cl100k_base"
+
+# Chunking evaluation metrics
+evaluation:
+  metrics:
+    - chunk_coherence
+    - information_completeness
+    - overlap_redundancy
+    - average_chunk_length
+    - chunk_count

@@ -1,0 +1,37 @@
+# Embedding configurations for RAG evaluation framework
+embedding_models:
+  ollama_qwen:
+    provider: "ollama"
+    model_name: "qwen3-embedding:8b"
+    embed_batch_size: 10
+    dimensions: 1536
+    
+  huggingface:
+    provider: "huggingface"
+    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    embed_batch_size: 32
+    dimensions: 384
+    
+  openai:
+    provider: "openai"
+    model_name: "text-embedding-ada-002"
+    embed_batch_size: 100
+    dimensions: 1536
+
+# Embedding evaluation settings
+evaluation:
+  similarity_metrics:
+    - cosine_similarity
+    - euclidean_distance
+    - dot_product
+    
+  clustering_evaluation:
+    - silhouette_score
+    - calinski_harabasz_score
+    - davies_bouldin_score
+    
+  retrieval_evaluation:
+    - precision_at_k: [1, 3, 5, 10]
+    - recall_at_k: [1, 3, 5, 10]
+    - mrr: true
+    - ndcg: [1, 3, 5, 10]

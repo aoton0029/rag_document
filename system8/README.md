@@ -12,39 +12,14 @@ rag-evaluation-framework/
 ├── src/
 │   ├── __init__.py
 │   ├── chunking/
-│   │   ├── __init__.py
-│   │   ├── strategies.py
-│   │   └── quality_assessor.py
+│   ├── indexing/
 │   ├── embedding/
-│   │   ├── __init__.py
-│   │   ├── models.py
-│   │   └── similarity_analyzer.py
 │   ├── retrieval/
-│   │   ├── __init__.py
-│   │   ├── strategies.py
-│   │   └── coverage_analyzer.py
 │   ├── evaluation/
-│   │   ├── __init__.py
-│   │   ├── component_evaluator.py
-│   │   ├── system_evaluator.py
-│   │   ├── human_evaluator.py
-│   │   ├── production_evaluator.py
-│   │   ├── statistical_validator.py
-│   │   ├── llm_judge.py
-│   │   └── comprehensive_runner.py
+│   ├── responsesynthsizer/
 │   ├── data_generation/
-│   │   ├── __init__.py
-│   │   ├── adaptive_generator.py
-│   │   └── adversarial_generator.py
 │   ├── monitoring/
-│   │   ├── __init__.py
-│   │   ├── continuous_pipeline.py
-│   │   └── alert_system.py
 │   └── utils/
-│       ├── __init__.py
-│       ├── data_loader.py
-│       ├── ragas_integration.py
-│       └── domain_adapter.py
 ├── tests/
 ├── data/
 └── results/
@@ -54,7 +29,7 @@ rag-evaluation-framework/
 
 ### `requirements.txt`
 ```txt
-llama-index==0.10.57
+llama-index
 python-dotenv
 setuptools
 llama-index

@@ -1,0 +1,76 @@
+# ドメイン固有設定
+domain_configs:
+  # 論文PDF処理設定
+  academic_papers:
+    document_structure:
+      # PDFの典型的な構造
+      sections:
+        - "title"
+        - "abstract" 
+        - "keywords"
+        - "introduction"
+        - "related_work"
+        - "methodology"
+        - "experiments"
+        - "results"
+        - "discussion"
+        - "conclusion"
+        - "references"
+        - "appendix"
+        
+      # セクション検出パターン
+      section_patterns:
+        title: ["title", "タイトル", "題目"]
+        abstract: ["abstract", "要約", "概要", "アブストラクト"]
+        keywords: ["keywords", "キーワード", "索引語"]
+        introduction: ["introduction", "はじめに", "序論", "1.", "1 "]
+        methodology: ["methodology", "method", "手法", "方法論", "アプローチ"]
+        results: ["results", "結果", "実験結果", "評価結果"]
+        conclusion: ["conclusion", "conclusions", "結論", "まとめ", "終わりに"]
+        references: ["references", "bibliography", "参考文献", "文献"]
+        
+    # 論文特有の前処理
+    preprocessing:
+      remove_headers_footers: true
+      remove_page_numbers: true
+      merge_hyphenated_words: true
+      handle_equations: true
+      extract_figures_tables: false
+      
+    # メタデータ抽出
+    metadata_extraction:
+      authors: true
+      affiliations: true  
+      publication_date: true
+      journal_conference: true
+      doi: true
+      citations: true
+      
+  # 技術文書設定
+  technical_docs:
+    structure_patterns:
+      - "api_reference"
+      - "user_manual" 
+      - "specification"
+      - "tutorial"
+      
+    code_handling:
+      extract_code_blocks: true
+      preserve_formatting: true
+      language_detection: true
+      
+# 品質保証設定
+quality_assurance:
+  validation_rules:
+    min_chunk_size: 50
+    max_chunk_size: 4000
+    max_overlap_ratio: 0.5
+    
+  content_filters:
+    remove_duplicates: true
+    similarity_threshold: 0.95
+    
+  error_handling:
+    skip_corrupted_chunks: true
+    log_processing_errors: true
+    fallback_chunking: "fixed_size"
