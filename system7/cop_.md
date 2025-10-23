@@ -1207,3 +1207,534 @@ evaluation_settings:
   # 評価メトリクス
   metrics:
     - "component_le
+
+
+
+
+改良版プロジェクト構造のchunking機能の詳細実装を提示します：
+
+## chunking機能の詳細実装
+
+### 1. `src/chunking/strategies.py`
+```python
+from typing import List, Dict, Any, Optional, Union
+from abc import ABC, abstractmethod
+import re
+import tiktoken
+from llama_index.core.node_parser import (
+    SimpleNodeParser,
+    SentenceSplitter,
+    SemanticSplitterNodeParser,
+    HierarchicalNodeParser,
+    TokenTextSplitter
+)
+from llama_index.core.schema import Document, TextNode
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
+from sentence_transformers import SentenceTransformer
+import numpy as np
+from sklearn.cluster import KMeans
+
+class ChunkingStrategy(ABC):
+    """チャンキング戦略の基底クラス"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.strategy_type = config.get("type")
+        
+    @abstractmethod
+    def create_parser(self):
+        """パーサーの作成"""
+        pass
+    
+    @abstractmethod
+    def chunk_documents(self, documents: List[Document]) -> List[TextNode]:
+        """ドキュメントのチャンク分割"""
+        pass
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        """戦略のメタデータ取得"""
+        return {
+            "strategy_type": self.strategy_type,
+            "config": self.config
+        }
+
+class FixedSizeChunkingStrategy(ChunkingStrategy):
+    """固定サイズチャンキング戦略"""
+    
+    def create_parser(self):
+        return SentenceSplitter(
+            chunk_size=self.config.get("chunk_size", 512),
+            chunk_overlap=self.config.get("chunk_overlap", 50),
+            separator=self.config.get("separator", "\n\n")
+        )
+    
+    def chunk_documents(self, documents: List[Document]) -> List[TextNode]:
+        parser = self.create_parser()
+        nodes = parser.get_nodes_from_documents(documents)
+        
+        # メタデータの追加
+        for i, node in enumerate(nodes):
+            node.metadata.update({
+                "chunking_strategy": "fixed_size",
+                "chunk_size": self.config.get("chunk_size"),
+                "chunk_overlap": self.config.get("chunk_overlap"),
+                "chunk_index": i,
+                "chunk_length": len(node.text)
+            })
+        
+        return nodes
+
+class TokenBasedChunkingStrategy(ChunkingStrategy):
+    """トークンベースチャンキング戦略"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        self.tokenizer_name = config.get("tokenizer", "cl100k_base")
+        try:
+            self.tokenizer = tiktoken.get_encoding(self.tokenizer_name)
+        except KeyError:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+    
+    def create_parser(self):
+        return TokenTextSplitter(
+            chunk_size=self.config.get("chunk_size", 512),
+            chunk_overlap=self.config.get("chunk_overlap", 50),
+            tokenizer=self.tokenizer.encode
+        )
+    
+    def chunk_documents(self, documents: List[Document]) -> List[TextNode]:
+        parser = self.create_parser()
+        nodes = parser.get_nodes_from_documents(documents)
+        
+        for i, node in enumerate(nodes):
+            token_count = len(self.tokenizer.encode(node.text))
+            node.metadata.update({
+                "chunking_strategy": "token_based",
+                "chunk_size": self.config.get("chunk_size"),
+                "chunk_overlap": self.config.get("chunk_overlap"),
+                "chunk_index": i,
+                "token_count": token_count,
+                "tokenizer": self.tokenizer_name
+            })
+        
+        return nodes
+
+class SemanticChunkingStrategy(ChunkingStrategy):
+    """セマンティックチャンキング戦略"""
+    
+    def create_parser(self):
+        embed_model_name = self.config.get("embed_model", "sentence-transformers/all-MiniLM-L6-v2")
+        
+        if embed_model_name.startswith("text-embedding"):
+            embed_model = OpenAIEmbedding(model=embed_model_name)
+        else:
+            embed_model = HuggingFaceEmbedding(model_name=embed_model_name)
+        
+        return SemanticSplitterNodeParser(
+            embed_model=embed_model,
+            breakpoint_percentile_threshold=self.config.get("breakpoint_percentile_threshold", 95),
+            buffer_size=self.config.get("buffer_size", 1)
+        )
+    
+    def chunk_documents(self, documents: List[Document]) -> List[TextNode]:
+        parser = self.create_parser()
+        nodes = parser.get_nodes_from_documents(documents)
+        
+        for i, node in enumerate(nodes):
+            node.metadata.update({
+                "chunking_strategy": "semantic",
+                "embed_model": self.config.get("embed_model"),
+                "breakpoint_threshold": self.config.get("breakpoint_percentile_threshold"),
+                "chunk_index": i,
+                "chunk_length": len(node.text)
+            })
+        
+        return nodes
+
+class HierarchicalChunkingStrategy(ChunkingStrategy):
+    """階層的チャンキング戦略"""
+    
+    def create_parser(self):
+        chunk_sizes = self.config.get("chunk_sizes", [2048, 512])
+        return HierarchicalNodeParser.from_defaults(
+            chunk_sizes=chunk_sizes,
+            chunk_overlap=self.config.get("chunk_overlap", 20)
+        )
+    
+    def chunk_documents(self, documents: List[Document]) -> List[TextNode]:
+        parser = self.create_parser()
+        nodes = parser.get_nodes_from_documents(documents)
+        
+        for i, node in enumerate(nodes):
+            node.metadata.update({
+                "chunking_strategy": "hierarchical",
+                "chunk_sizes": self.config.get("chunk_sizes"),
+                "chunk_overlap": self.config.get("chunk_overlap"),
+                "chunk_index": i,
+                "hierarchy_level": self._determine_hierarchy_level(node),
+                "chunk_length": len(node.text)
+            })
+        
+        return nodes
+    
+    def _determine_hierarchy_level(self, node: TextNode) -> int:
+        """ノードの階層レベルを決定"""
+        chunk_length = len(node.text)
+        chunk_sizes = self.config.get("chunk_sizes", [2048, 512])
+        
+        for level, size in enumerate(chunk_sizes):
+            if chunk_length >= size * 0.8:  # 80%以上なら該当レベル
+                return level
+        
+        return len(chunk_sizes) - 1  # 最下位レベル
+
+class SentenceBasedChunkingStrategy(ChunkingStrategy):
+    """文単位チャンキング戦略"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        self.sentence_splitter = re.compile(r'[.!?]+\s+')
+    
+    def create_parser(self):
+        # 文単位での分割なので、カスタム実装
+        return None
+    
+    def chunk_documents(self, documents: List[Document]) -> List[TextNode]:
+        nodes = []
+        chunk_size = self.config.get("chunk_size", 3)  # 文の数
+        chunk_overlap = self.config.get("chunk_overlap", 1)
+        
+        for doc_idx, document in enumerate(documents):
+            sentences = self._split_into_sentences(document.text)
+            
+            for i in range(0, len(sentences), chunk_size - chunk_overlap):
+                chunk_sentences = sentences[i:i + chunk_size]
+                chunk_text = ' '.join(chunk_sentences)
+                
+                if chunk_text.strip():
+                    node = TextNode(
+                        text=chunk_text,
+                        metadata={
+                            **document.metadata,
+                            "chunking_strategy": "sentence_based",
+                            "chunk_size": chunk_size,
+                            "chunk_overlap": chunk_overlap,
+                            "chunk_index": i // (chunk_size - chunk_overlap) if chunk_overlap > 0 else i // chunk_size,
+                            "sentence_count": len(chunk_sentences),
+                            "document_index": doc_idx
+                        }
+                    )
+                    nodes.append(node)
+        
+        return nodes
+    
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """テキストを文に分割"""
+        sentences = self.sentence_splitter.split(text)
+        return [s.strip() for s in sentences if s.strip()]
+
+class AdaptiveChunkingStrategy(ChunkingStrategy):
+    """適応的チャンキング戦略"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        self.semantic_model = SentenceTransformer(
+            config.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
+        )
+    
+    def create_parser(self):
+        return None  # カスタム実装
+    
+    def chunk_documents(self, documents: List[Document]) -> List[TextNode]:
+        nodes = []
+        
+        for doc_idx, document in enumerate(documents):
+            doc_nodes = self._adaptive_chunk_document(document, doc_idx)
+            nodes.extend(doc_nodes)
+        
+        return nodes
+    
+    def _adaptive_chunk_document(self, document: Document, doc_idx: int) -> List[TextNode]:
+        """文書を適応的にチャンク分割"""
+        text = document.text
+        paragraphs = text.split('\n\n')
+        
+        nodes = []
+        current_chunk = ""
+        current_embeddings = []
+        chunk_index = 0
+        
+        min_chunk_size = self.config.get("min_chunk_size", 100)
+        max_chunk_size = self.config.get("max_chunk_size", 1000)
+        similarity_threshold = self.config.get("similarity_threshold", 0.8)
+        
+        for para in paragraphs:
+            if not para.strip():
+                continue
+            
+            para_embedding = self.semantic_model.encode([para])[0]
+            
+            if not current_chunk:
+                current_chunk = para
+                current_embeddings = [para_embedding]
+            else:
+                # 現在のチャンクとの類似度を計算
+                avg_embedding = np.mean(current_embeddings, axis=0)
+                similarity = np.dot(avg_embedding, para_embedding) / (
+                    np.linalg.norm(avg_embedding) * np.linalg.norm(para_embedding)
+                )
+                
+                potential_chunk = current_chunk + "\n\n" + para
+                
+                # チャンクを追加するかどうかの判定
+                should_add = (
+                    similarity >= similarity_threshold and
+                    len(potential_chunk) <= max_chunk_size
+                )
+                
+                if should_add:
+                    current_chunk = potential_chunk
+                    current_embeddings.append(para_embedding)
+                else:
+                    # 現在のチャンクを確定
+                    if len(current_chunk) >= min_chunk_size:
+                        node = TextNode(
+                            text=current_chunk,
+                            metadata={
+                                **document.metadata,
+                                "chunking_strategy": "adaptive",
+                                "chunk_index": chunk_index,
+                                "chunk_length": len(current_chunk),
+                                "semantic_coherence": np.mean([
+                                    np.dot(avg_embedding, emb) / (
+                                        np.linalg.norm(avg_embedding) * np.linalg.norm(emb)
+                                    ) for emb in current_embeddings
+                                ]),
+                                "document_index": doc_idx
+                            }
+                        )
+                        nodes.append(node)
+                        chunk_index += 1
+                    
+                    # 新しいチャンクを開始
+                    current_chunk = para
+                    current_embeddings = [para_embedding]
+        
+        # 最後のチャンクを処理
+        if current_chunk and len(current_chunk) >= min_chunk_size:
+            avg_embedding = np.mean(current_embeddings, axis=0)
+            node = TextNode(
+                text=current_chunk,
+                metadata={
+                    **document.metadata,
+                    "chunking_strategy": "adaptive",
+                    "chunk_index": chunk_index,
+                    "chunk_length": len(current_chunk),
+                    "semantic_coherence": np.mean([
+                        np.dot(avg_embedding, emb) / (
+                            np.linalg.norm(avg_embedding) * np.linalg.norm(emb)
+                        ) for emb in current_embeddings
+                    ]),
+                    "document_index": doc_idx
+                }
+            )
+            nodes.append(node)
+        
+        return nodes
+
+class ChunkingStrategyFactory:
+    """チャンキング戦略のファクトリークラス"""
+    
+    _strategies = {
+        "fixed_size": FixedSizeChunkingStrategy,
+        "token": TokenBasedChunkingStrategy,
+        "semantic": SemanticChunkingStrategy,
+        "hierarchical": HierarchicalChunkingStrategy,
+        "sentence": SentenceBasedChunkingStrategy,
+        "adaptive": AdaptiveChunkingStrategy
+    }
+    
+    @classmethod
+    def create_strategy(cls, config: Dict[str, Any]) -> ChunkingStrategy:
+        """設定に基づいてチャンキング戦略を作成"""
+        strategy_type = config.get("type")
+        
+        if strategy_type not in cls._strategies:
+            raise ValueError(f"Unknown chunking strategy: {strategy_type}")
+        
+        return cls._strategies[strategy_type](config)
+    
+    @classmethod
+    def get_available_strategies(cls) -> List[str]:
+        """利用可能な戦略のリストを取得"""
+        return list(cls._strategies.keys())
+
+class ChunkingPipeline:
+    """チャンキングパイプライン"""
+    
+    def __init__(self, strategies_config: Dict[str, Dict[str, Any]]):
+        self.strategies_config = strategies_config
+        self.strategies = {}
+        
+        # 戦略を事前に初期化
+        for name, config in strategies_config.items():
+            self.strategies[name] = ChunkingStrategyFactory.create_strategy(config)
+    
+    def process_documents(self, documents: List[Document], 
+                         strategy_name: str) -> List[TextNode]:
+        """指定された戦略でドキュメントを処理"""
+        if strategy_name not in self.strategies:
+            raise ValueError(f"Strategy '{strategy_name}' not found")
+        
+        strategy = self.strategies[strategy_name]
+        return strategy.chunk_documents(documents)
+    
+    def process_multiple_strategies(self, documents: List[Document], 
+                                  strategy_names: List[str]) -> Dict[str, List[TextNode]]:
+        """複数の戦略でドキュメントを処理"""
+        results = {}
+        
+        for strategy_name in strategy_names:
+            results[strategy_name] = self.process_documents(documents, strategy_name)
+        
+        return results
+    
+    def get_strategy_info(self, strategy_name: str) -> Dict[str, Any]:
+        """戦略の情報を取得"""
+        if strategy_name not in self.strategies:
+            raise ValueError(f"Strategy '{strategy_name}' not found")
+        
+        return self.strategies[strategy_name].get_metadata()
+```
+
+### 2. `src/chunking/quality_assessor.py`
+```python
+import numpy as np
+from typing import List, Dict, Any, Tuple
+from collections import Counter
+import re
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sentence_transformers import SentenceTransformer
+from llama_index.core.schema import TextNode
+
+class ChunkQualityAssessor:
+    """チャンク品質評価クラス"""
+    
+    def __init__(self, semantic_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+        self.semantic_model = SentenceTransformer(semantic_model_name)
+        self.tfidf_vectorizer = TfidfVectorizer(
+            max_features=1000,
+            stop_words='english',
+            ngram_range=(1, 2)
+        )
+    
+    def assess_chunk_quality(self, chunks: List[TextNode]) -> Dict[str, Any]:
+        """チャンクの品質を総合評価"""
+        if not chunks:
+            return {"error": "No chunks provided"}
+        
+        chunk_texts = [chunk.text for chunk in chunks]
+        
+        assessment = {
+            "total_chunks": len(chunks),
+            "semantic_coherence": self.calculate_semantic_coherence(chunk_texts),
+            "information_density": self.calculate_information_density(chunk_texts),
+            "size_consistency": self.calculate_size_consistency(chunk_texts),
+            "overlap_analysis": self.calculate_overlap_analysis(chunk_texts),
+            "content_coverage": self.calculate_content_coverage(chunk_texts),
+            "readability_scores": self.calculate_readability_scores(chunk_texts),
+            "chunk_statistics": self.calculate_chunk_statistics(chunk_texts)
+        }
+        
+        # 総合スコアの計算
+        assessment["overall_quality_score"] = self._calculate_overall_score(assessment)
+        
+        return assessment
+    
+    def calculate_semantic_coherence(self, chunk_texts: List[str]) -> Dict[str, float]:
+        """セマンティック一貫性の計算"""
+        if len(chunk_texts) < 2:
+            return {"coherence_score": 1.0, "std_coherence": 0.0}
+        
+        embeddings = self.semantic_model.encode(chunk_texts)
+        
+        # チャンク間の類似度を計算
+        similarities = []
+        for i in range(len(embeddings)):
+            for j in range(i + 1, len(embeddings)):
+                sim = cosine_similarity([embeddings[i]], [embeddings[j]])[0][0]
+                similarities.append(sim)
+        
+        # クラスタリングによる一貫性評価
+        n_clusters = min(max(2, len(chunk_texts) // 3), 10)
+        if len(chunk_texts) >= n_clusters:
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(embeddings)
+            silhouette_avg = silhouette_score(embeddings, cluster_labels)
+        else:
+            silhouette_avg = 0.5
+        
+        return {
+            "coherence_score": np.mean(similarities),
+            "std_coherence": np.std(similarities),
+            "silhouette_score": max(0, silhouette_avg),
+            "min_similarity": np.min(similarities),
+            "max_similarity": np.max(similarities)
+        }
+    
+    def calculate_information_density(self, chunk_texts: List[str]) -> Dict[str, float]:
+        """情報密度の計算"""
+        densities = []
+        unique_word_ratios = []
+        
+        for chunk in chunk_texts:
+            words = re.findall(r'\b\w+\b', chunk.lower())
+            if not words:
+                densities.append(0.0)
+                unique_word_ratios.append(0.0)
+                continue
+            
+            # 語彙の多様性
+            unique_words = len(set(words))
+            total_words = len(words)
+            unique_ratio = unique_words / total_words
+            unique_word_ratios.append(unique_ratio)
+            
+            # 情報密度（単語あたりの文字数）
+            char_count = len(re.sub(r'\s+', '', chunk))
+            density = char_count / total_words if total_words > 0 else 0
+            densities.append(density)
+        
+        # TF-IDFによる情報価値の評価
+        try:
+            tfidf_matrix = self.tfidf_vectorizer.fit_transform(chunk_texts)
+            tfidf_scores = np.mean(tfidf_matrix.toarray(), axis=1)
+        except ValueError:
+            tfidf_scores = np.zeros(len(chunk_texts))
+        
+        return {
+            "avg_density": np.mean(densities),
+            "std_density": np.std(densities),
+            "avg_unique_word_ratio": np.mean(unique_word_ratios),
+            "std_unique_word_ratio": np.std(unique_word_ratios),
+            "avg_tfidf_score": np.mean(tfidf_scores),
+            "min_density": np.min(densities),
+            "max_density": np.max(densities)
+        }
+    
+    def calculate_size_consistency(self, chunk_texts: List[str]) -> Dict[str, float]:
+        """サイズ一貫性の計算"""
+        char_lengths = [len(chunk) for chunk in chunk_texts]
+        word_lengths = [len(chunk.split()) for chunk in chunk_texts]
+        
+        return {
+            "char_length_mean": np.mean(char_lengths),
+            "char_length_std": np.std(char_lengths),
+            "char_length_cv": np.std(char_lengths) / np.mean(char_lengths) if np.mean(char_lengths) > 0 else 0,
+            "word_length_mean": np.mean(word_lengths),
+            "word_length_std": np.std(word_lengths),
+            "word_length_cv": np.std(word_lengths) / np.mean(word_lengths) if np.mean(word_lengths) 
