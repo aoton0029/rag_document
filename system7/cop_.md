@@ -315,58 +315,446 @@ langchain==0.1.0
 nest-asyncio==1.5.8
 ```
 
-### `config/evaluation_configs.yaml`
+
+
+
+GitHub URLを確認して、改良版プロジェクトの詳細な設定ファイルを提示します。既存のドキュメントを確認しました。改良版プロジェクト構造の各設定ファイル（コンフィグ）を詳細に提示します：
+
+## 改良版プロジェクト構造の各コンフィグファイル
+
+### 1. `config/chunking_configs.yaml`
 ```yaml
+# チャンキング戦略の設定
+chunking_strategies:
+  # 固定サイズチャンキング（小）
+  fixed_size_256:
+    type: "fixed_size"
+    chunk_size: 256
+    chunk_overlap: 25
+    separator: "\n\n"
+    
+  # 固定サイズチャンキング（中）
+  fixed_size_512:
+    type: "fixed_size"
+    chunk_size: 512
+    chunk_overlap: 50
+    separator: "\n\n"
+    
+  # 固定サイズチャンキング（大）
+  fixed_size_1024:
+    type: "fixed_size"
+    chunk_size: 1024
+    chunk_overlap: 100
+    separator: "\n\n"
+    
+  # 固定サイズチャンキング（特大）
+  fixed_size_2048:
+    type: "fixed_size"
+    chunk_size: 2048
+    chunk_overlap: 200
+    separator: "\n\n"
+  
+  # セマンティックチャンキング
+  semantic_llama:
+    type: "semantic"
+    embed_model: "sentence-transformers/all-MiniLM-L6-v2"
+    breakpoint_percentile_threshold: 95
+    buffer_size: 1
+    
+  # セマンティックチャンキング（厳格）
+  semantic_strict:
+    type: "semantic"
+    embed_model: "sentence-transformers/all-MiniLM-L6-v2"
+    breakpoint_percentile_threshold: 85
+    buffer_size: 0
+    
+  # 階層的チャンキング
+  hierarchical_standard:
+    type: "hierarchical"
+    chunk_sizes: [2048, 512, 128]
+    chunk_overlap: 20
+    
+  # 階層的チャンキング（詳細）
+  hierarchical_detailed:
+    type: "hierarchical"
+    chunk_sizes: [4096, 1024, 256, 64]
+    chunk_overlap: 50
+    
+  # 文単位チャンキング
+  sentence_based:
+    type: "sentence"
+    chunk_size: 3
+    chunk_overlap: 1
+    paragraph_separator: "\n\n"
+    
+  # トークンベースチャンキング
+  token_based_512:
+    type: "token"
+    chunk_size: 512
+    chunk_overlap: 50
+    tokenizer: "cl100k_base"
+    
+  # トークンベースチャンキング（大）
+  token_based_1024:
+    type: "token"
+    chunk_size: 1024
+    chunk_overlap: 100
+    tokenizer: "cl100k_base"
+
+# チャンキング品質評価設定
+chunk_quality_settings:
+  semantic_coherence:
+    enabled: true
+    threshold: 0.7
+    
+  information_density:
+    enabled: true
+    min_density: 0.3
+    
+  overlap_analysis:
+    enabled: true
+    max_overlap: 0.3
+    
+  size_distribution:
+    enabled: true
+    target_variance: 0.2
+```
+
+### 2. `config/embedding_configs.yaml`
+```yaml
+# 埋め込みモデルの設定
+embedding_models:
+  # OpenAI Embeddings
+  openai_ada_002:
+    type: "openai"
+    model_name: "text-embedding-ada-002"
+    dimensions: 1536
+    api_key_env: "OPENAI_API_KEY"
+    
+  openai_ada_003:
+    type: "openai"
+    model_name: "text-embedding-3-small"
+    dimensions: 1536
+    api_key_env: "OPENAI_API_KEY"
+    
+  openai_large:
+    type: "openai"
+    model_name: "text-embedding-3-large"
+    dimensions: 3072
+    api_key_env: "OPENAI_API_KEY"
+  
+  # Sentence Transformers
+  sentence_transformers_mini:
+    type: "huggingface"
+    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    dimensions: 384
+    device: "cpu"
+    trust_remote_code: false
+    
+  sentence_transformers_mpnet:
+    type: "huggingface"
+    model_name: "sentence-transformers/all-mpnet-base-v2"
+    dimensions: 768
+    device: "cpu"
+    trust_remote_code: false
+    
+  # BGE Embeddings
+  bge_small:
+    type: "huggingface"
+    model_name: "BAAI/bge-small-en-v1.5"
+    dimensions: 384
+    device: "cpu"
+    trust_remote_code: false
+    
+  bge_base:
+    type: "huggingface"
+    model_name: "BAAI/bge-base-en-v1.5"
+    dimensions: 768
+    device: "cpu"
+    trust_remote_code: false
+    
+  bge_large:
+    type: "huggingface"
+    model_name: "BAAI/bge-large-en-v1.5"
+    dimensions: 1024
+    device: "cpu"
+    trust_remote_code: false
+    
+  # E5 Embeddings
+  e5_small:
+    type: "huggingface"
+    model_name: "intfloat/e5-small-v2"
+    dimensions: 384
+    device: "cpu"
+    trust_remote_code: false
+    prefix: "passage: "
+    
+  e5_base:
+    type: "huggingface"
+    model_name: "intfloat/e5-base-v2"
+    dimensions: 768
+    device: "cpu"
+    trust_remote_code: false
+    prefix: "passage: "
+    
+  # 日本語対応モデル
+  japanese_sentence_bert:
+    type: "huggingface"
+    model_name: "colorfulscoop/sbert-base-ja"
+    dimensions: 768
+    device: "cpu"
+    trust_remote_code: false
+    
+  multilingual_e5:
+    type: "huggingface"
+    model_name: "intfloat/multilingual-e5-base"
+    dimensions: 768
+    device: "cpu"
+    trust_remote_code: false
+    prefix: "passage: "
+
+# 埋め込み品質評価設定
+embedding_quality_settings:
+  cluster_analysis:
+    enabled: true
+    n_clusters_range: [2, 10]
+    
+  dimensionality_analysis:
+    enabled: true
+    pca_variance_threshold: 0.95
+    
+  semantic_preservation:
+    enabled: true
+    sample_size: 100
+    
+  retrieval_performance:
+    enabled: true
+    top_k_values: [1, 3, 5, 10]
+```
+
+### 3. `config/retrieval_configs.yaml`
+```yaml
+# 検索戦略の設定
+retrieval_strategies:
+  # ベクター検索
+  vector_search_basic:
+    type: "vector"
+    similarity_top_k: 5
+    similarity_cutoff: 0.0
+    
+  vector_search_precise:
+    type: "vector"
+    similarity_top_k: 10
+    similarity_cutoff: 0.7
+    
+  # ハイブリッド検索
+  hybrid_search:
+    type: "hybrid" 
+    vector_similarity_top_k: 8
+    keyword_similarity_top_k: 8
+    alpha: 0.5  # ベクター検索の重み
+    
+  # キーワード検索
+  keyword_search:
+    type: "keyword"
+    similarity_top_k: 5
+    
+  # リランキング付き検索
+  rerank_search:
+    type: "rerank"
+    initial_top_k: 20
+    final_top_k: 5
+    rerank_model: "cross-encoder"
+    
+  # 階層検索
+  hierarchical_retrieval:
+    type: "hierarchical"
+    parent_top_k: 3
+    child_top_k: 5
+    
+  # セマンティック検索
+  semantic_search:
+    type: "semantic"
+    similarity_top_k: 5
+    semantic_threshold: 0.8
+    
+  # マルチクエリ検索
+  multi_query:
+    type: "multi_query"
+    num_queries: 3
+    similarity_top_k: 5
+
+# ベクターストア設定
+vector_store_configs:
+  # FAISS設定
+  faiss:
+    type: "faiss"
+    index_type: "flat"
+    metric: "cosine"
+    
+  # Chroma設定
+  chroma:
+    type: "chroma"
+    persist_directory: "./chroma_db"
+    collection_name: "rag_documents"
+    
+  # Qdrant設定
+  qdrant:
+    type: "qdrant"
+    location: ":memory:"
+    collection_name: "rag_documents"
+    vector_size: 1536
+    
+  # Pinecone設定
+  pinecone:
+    type: "pinecone"
+    api_key_env: "PINECONE_API_KEY"
+    environment: "us-west1-gcp"
+    index_name: "rag-index"
+
+# 検索品質評価設定
+retrieval_quality_settings:
+  coverage_analysis:
+    enabled: true
+    minimum_coverage: 0.8
+    
+  relevance_distribution:
+    enabled: true
+    relevance_threshold: 0.7
+    
+  diversity_assessment:
+    enabled: true
+    diversity_threshold: 0.5
+    
+  latency_analysis:
+    enabled: true
+    max_latency_ms: 1000
+```
+
+### 4. `config/evaluation_configs.yaml`
+```yaml
+# 評価フレームワークの設定
 evaluation_framework:
+  # 評価レベル
   levels:
     - component_level
     - system_level
     - human_level
     - production_level
   
+  # コンポーネントレベル評価
   component_level:
     chunk_quality:
+      enabled: true
       metrics:
         - semantic_coherence
         - information_density
         - overlap_analysis
+        - size_distribution
+      weights:
+        semantic_coherence: 0.3
+        information_density: 0.3
+        overlap_analysis: 0.2
+        size_distribution: 0.2
     
     embedding_quality:
+      enabled: true
       metrics:
         - cluster_quality
         - semantic_preservation
         - dimensionality_analysis
+        - retrieval_performance
+      weights:
+        cluster_quality: 0.25
+        semantic_preservation: 0.3
+        dimensionality_analysis: 0.2
+        retrieval_performance: 0.25
     
     retrieval_quality:
+      enabled: true
       metrics:
         - coverage_analysis
         - relevance_distribution
         - diversity_assessment
+        - latency_analysis
+      weights:
+        coverage_analysis: 0.3
+        relevance_distribution: 0.3
+        diversity_assessment: 0.2
+        latency_analysis: 0.2
 
+  # システムレベル評価
   system_level:
+    # RAGAS メトリクス
     ragas_metrics:
-      - faithfulness
-      - answer_relevancy
-      - context_precision
-      - context_recall
-      - context_relevancy
+      enabled: true
+      metrics:
+        - faithfulness
+        - answer_relevancy
+        - context_precision
+        - context_recall
+        - context_relevancy
+        - answer_correctness
+        - answer_similarity
+      weights:
+        faithfulness: 0.2
+        answer_relevancy: 0.2
+        context_precision: 0.15
+        context_recall: 0.15
+        context_relevancy: 0.1
+        answer_correctness: 0.1
+        answer_similarity: 0.1
     
+    # 従来メトリクス
     traditional_metrics:
-      - precision_at_k
-      - recall_at_k
-      - ndcg_at_k
-      - mrr
+      enabled: true
+      metrics:
+        - precision_at_k
+        - recall_at_k
+        - ndcg_at_k
+        - mrr
+        - map
+      k_values: [1, 3, 5, 10]
+      weights:
+        precision_at_k: 0.25
+        recall_at_k: 0.25
+        ndcg_at_k: 0.25
+        mrr: 0.15
+        map: 0.1
     
+    # LLM Judge評価
     llm_judge:
+      enabled: true
       judge_model: "gpt-4-turbo"
+      temperature: 0.1
+      max_tokens: 1000
       evaluation_aspects:
         - factual_accuracy
         - relevance_to_query
         - context_utilization
         - completeness
         - overall_quality
+      weights:
+        factual_accuracy: 0.25
+        relevance_to_query: 0.25
+        context_utilization: 0.2
+        completeness: 0.15
+        overall_quality: 0.15
+      
+    # BERTScore評価
+    bert_score:
+      enabled: true
+      model_type: "microsoft/deberta-xlarge-mnli"
+      lang: "en"
+      
+    # ROUGE評価
+    rouge_score:
+      enabled: true
+      rouge_types: ["rouge1", "rouge2", "rougeL"]
 
+  # 人間評価レベル
   human_level:
+    enabled: false  # デフォルトでは無効
     sample_size: 50
     evaluators: 3
     inter_rater_agreement: true
@@ -375,541 +763,447 @@ evaluation_framework:
       - helpfulness
       - clarity
       - completeness
+      - fluency
+    weights:
+      accuracy: 0.3
+      helpfulness: 0.25
+      clarity: 0.2
+      completeness: 0.15
+      fluency: 0.1
 
+  # プロダクションレベル評価
   production_level:
+    enabled: false  # デフォルトでは無効
     metrics:
       - user_satisfaction
       - task_completion_rate
       - latency_percentiles
       - cost_per_query
       - error_rate
+      - throughput
+    monitoring_interval: "1h"
+    alert_thresholds:
+      user_satisfaction: 0.8
+      task_completion_rate: 0.9
+      latency_p95: 5000  # ms
+      error_rate: 0.05
 
+# 統計的検証設定
 statistical_validation:
+  enabled: true
   significance_threshold: 0.05
   effect_size_threshold: 0.2
   multiple_comparison_correction: "bonferroni"
   bootstrap_iterations: 1000
+  confidence_level: 0.95
+  
+  # 検定手法の設定
+  test_methods:
+    auto_select: true
+    preferred_parametric: "t_test"
+    preferred_nonparametric: "wilcoxon"
+    normality_test: "shapiro"
+    
+# レポート生成設定
+reporting:
+  enabled: true
+  output_formats: ["html", "pdf", "json"]
+  include_visualizations: true
+  save_raw_data: true
+  
+  # 可視化設定
+  visualizations:
+    performance_comparison: true
+    statistical_significance: true
+    correlation_analysis: true
+    time_series_analysis: false
+    
+  # 自動推奨機能
+  recommendations:
+    enabled: true
+    top_n_configurations: 3
+    include_reasoning: true
+    confidence_threshold: 0.8
 ```
 
-### `config/domain_configs.yaml`
+### 5. `config/domain_configs.yaml`
 ```yaml
+# ドメイン特化設定
 domains:
+  # 技術ドメイン
   technical:
+    description: "プログラミング、API、技術文書"
     specific_metrics:
       - code_correctness
       - api_completeness
       - technical_depth
+      - example_quality
+      - implementation_accuracy
+    
     test_patterns:
       - programming_concepts
       - api_documentation
       - troubleshooting_guides
+      - code_examples
+      - technical_specifications
+      
+    evaluation_criteria:
+      code_correctness:
+        weight: 0.3
+        description: "コードの正確性と実行可能性"
+      api_completeness:
+        weight: 0.25
+        description: "API情報の完全性"
+      technical_depth:
+        weight: 0.2
+        description: "技術的な詳細度"
+      example_quality:
+        weight: 0.15
+        description: "実例の品質と適切性"
+      implementation_accuracy:
+        weight: 0.1
+        description: "実装手順の正確性"
+    
+    query_templates:
+      - "How to implement {concept} in {language}?"
+      - "What is the difference between {tech_a} and {tech_b}?"
+      - "Best practices for {technology}"
+      - "Troubleshoot {error_type} in {framework}"
   
+  # 医学ドメイン
   medical:
+    description: "医学、臨床、薬学情報"
     specific_metrics:
       - clinical_accuracy
       - safety_assessment
       - evidence_quality
+      - contraindication_awareness
+      - dosage_precision
+    
     test_patterns:
       - clinical_cases
       - drug_interactions
       - diagnostic_procedures
+      - treatment_protocols
+      - medical_guidelines
+      
+    evaluation_criteria:
+      clinical_accuracy:
+        weight: 0.35
+        description: "臨床情報の正確性"
+      safety_assessment:
+        weight: 0.25
+        description: "安全性に関する評価"
+      evidence_quality:
+        weight: 0.2
+        description: "エビデンスの質と信頼性"
+      contraindication_awareness:
+        weight: 0.15
+        description: "禁忌事項の認識"
+      dosage_precision:
+        weight: 0.05
+        description: "投与量の正確性"
+    
+    safety_checks:
+      enabled: true
+      critical_keywords: ["dosage", "contraindication", "side effects", "allergy"]
+      require_citation: true
+      
+    query_templates:
+      - "What are the symptoms of {condition}?"
+      - "Treatment options for {diagnosis}"
+      - "Drug interactions with {medication}"
+      - "Diagnostic criteria for {disease}"
   
+  # 法律ドメイン
   legal:
+    description: "法律、判例、規制情報"
     specific_metrics:
       - citation_accuracy
       - legal_reasoning
       - precedent_relevance
+      - statute_interpretation
+      - jurisdiction_awareness
+    
     test_patterns:
       - case_law_analysis
       - statute_interpretation
       - contract_analysis
+      - regulatory_compliance
+      - legal_precedents
+      
+    evaluation_criteria:
+      citation_accuracy:
+        weight: 0.3
+        description: "引用の正確性"
+      legal_reasoning:
+        weight: 0.25
+        description: "法的推論の妥当性"
+      precedent_relevance:
+        weight: 0.2
+        description: "判例の関連性"
+      statute_interpretation:
+        weight: 0.15
+        description: "法令解釈の適切性"
+      jurisdiction_awareness:
+        weight: 0.1
+        description: "管轄権の認識"
+    
+    citation_requirements:
+      enabled: true
+      required_formats: ["case_citation", "statute_reference"]
+      verify_authenticity: true
+      
+    query_templates:
+      - "Legal precedent for {legal_issue}"
+      - "Statute requirements for {regulation}"
+      - "Case law analysis of {legal_concept}"
+      - "Compliance requirements for {industry}"
   
+  # 金融ドメイン
+  financial:
+    description: "金融、投資、経済情報"
+    specific_metrics:
+      - financial_accuracy
+      - risk_assessment
+      - regulatory_compliance
+      - market_relevance
+      - numerical_precision
+    
+    test_patterns:
+      - investment_analysis
+      - risk_assessment
+      - regulatory_compliance
+      - market_analysis
+      - financial_calculations
+      
+    evaluation_criteria:
+      financial_accuracy:
+        weight: 0.3
+        description: "金融情報の正確性"
+      risk_assessment:
+        weight: 0.25
+        description: "リスク評価の適切性"
+      regulatory_compliance:
+        weight: 0.2
+        description: "規制遵守の認識"
+      market_relevance:
+        weight: 0.15
+        description: "市場関連性"
+      numerical_precision:
+        weight: 0.1
+        description: "数値の精度"
+    
+    risk_warnings:
+      enabled: true
+      required_disclaimers: true
+      
+    query_templates:
+      - "Investment risks of {asset_class}"
+      - "Regulatory requirements for {financial_product}"
+      - "Market analysis of {sector}"
+      - "Financial ratios for {company_analysis}"
+  
+  # 一般ドメイン
   general:
+    description: "一般的な知識、事実情報"
     specific_metrics:
       - factual_accuracy
       - logical_consistency
       - comprehensiveness
+      - source_reliability
+      - information_freshness
+    
     test_patterns:
       - factual_questions
       - reasoning_tasks
       - summarization_requests
+      - comparison_analysis
+      - explanatory_content
+      
+    evaluation_criteria:
+      factual_accuracy:
+        weight: 0.3
+        description: "事実の正確性"
+      logical_consistency:
+        weight: 0.25
+        description: "論理的一貫性"
+      comprehensiveness:
+        weight: 0.2
+        description: "包括性"
+      source_reliability:
+        weight: 0.15
+        description: "情報源の信頼性"
+      information_freshness:
+        weight: 0.1
+        description: "情報の新しさ"
+    
+    query_templates:
+      - "What is {concept}?"
+      - "Explain the difference between {item_a} and {item_b}"
+      - "History of {topic}"
+      - "Current status of {subject}"
+
+# ドメイン適応設定
+domain_adaptation:
+  automatic_detection:
+    enabled: true
+    confidence_threshold: 0.8
+    keywords_based: true
+    context_based: true
+    
+  cross_domain_evaluation:
+    enabled: true
+    penalty_factor: 0.1
+    
+  domain_specific_preprocessing:
+    enabled: true
+    custom_tokenizers: true
+    domain_stopwords: true
+    
+  specialized_models:
+    technical:
+      embedding_model: "microsoft/codebert-base"
+      rerank_model: "cross-encoder/ms-marco-MiniLM-L-12-v2"
+    medical:
+      embedding_model: "dmis-lab/biobert-base-cased-v1.1"
+      rerank_model: "cross-encoder/ms-marco-MiniLM-L-12-v2"
+    legal:
+      embedding_model: "nlpaueb/legal-bert-base-uncased"
+      rerank_model: "cross-encoder/ms-marco-MiniLM-L-12-v2"
 ```
 
-### `src/utils/ragas_integration.py`
-```python
-from typing import List, Dict, Any
-import pandas as pd
-from datasets import Dataset
-from ragas import evaluate
-from ragas.metrics import (
-    faithfulness,
-    answer_relevancy,
-    context_precision,
-    context_recall,
-    context_relevancy,
-    answer_correctness,
-    answer_similarity
-)
+### 6. `config/test_patterns.yaml`
+```yaml
+# テストパターン設定
+test_patterns:
+  # ベースライン設定
+  - name: "baseline_small"
+    description: "小さいチャンクでのベースライン"
+    chunking: "fixed_size_512"
+    embedding: "sentence_transformers_mini"
+    retrieval: "vector_search_basic"
+    top_k: 5
+    domain: "general"
+    
+  - name: "baseline_large"
+    description: "大きいチャンクでのベースライン"
+    chunking: "fixed_size_1024"
+    embedding: "sentence_transformers_mpnet"
+    retrieval: "vector_search_basic"
+    top_k: 5
+    domain: "general"
+    
+  # OpenAI設定
+  - name: "openai_standard"
+    description: "OpenAI標準設定"  
+    chunking: "fixed_size_512"
+    embedding: "openai_ada_002"
+    retrieval: "vector_search_basic"
+    top_k: 5
+    domain: "general"
+    
+  - name: "openai_premium"
+    description: "OpenAI高性能設定"
+    chunking: "fixed_size_1024"
+    embedding: "openai_large"
+    retrieval: "hybrid_search"
+    top_k: 8
+    domain: "general"
+    
+  # セマンティックチャンキング
+  - name: "semantic_chunking"
+    description: "セマンティックチャンキング"
+    chunking: "semantic_llama"
+    embedding: "bge_large"
+    retrieval: "vector_search_precise"
+    top_k: 8
+    domain: "general"
+    
+  - name: "semantic_strict"
+    description: "厳格なセマンティックチャンキング"
+    chunking: "semantic_strict"
+    embedding: "bge_large"
+    retrieval: "rerank_search"
+    top_k: 10
+    domain: "general"
+    
+  # 階層的アプローチ
+  - name: "hierarchical_standard"
+    description: "階層的チャンキング標準"
+    chunking: "hierarchical_standard"
+    embedding: "bge_base"
+    retrieval: "hierarchical_retrieval"
+    top_k: 8
+    domain: "general"
+    
+  - name: "hierarchical_detailed"
+    description: "詳細階層的アプローチ"
+    chunking: "hierarchical_detailed"
+    embedding: "openai_large"
+    retrieval: "hierarchical_retrieval"
+    top_k: 10
+    domain: "general"
+    
+  # ハイブリッド検索
+  - name: "hybrid_approach"
+    description: "ハイブリッド検索アプローチ"
+    chunking: "fixed_size_512"
+    embedding: "bge_large"
+    retrieval: "hybrid_search"
+    top_k: 10
+    domain: "general"
+    
+  # 高性能設定
+  - name: "high_performance"
+    description: "高性能設定"
+    chunking: "token_based_1024"
+    embedding: "openai_large"
+    retrieval: "rerank_search"
+    top_k: 20
+    domain: "general"
+    
+  # 多言語対応
+  - name: "multilingual"
+    description: "多言語対応設定"
+    chunking: "fixed_size_512"
+    embedding: "multilingual_e5"
+    retrieval: "vector_search_basic"
+    top_k: 5
+    domain: "general"
+    
+  # ドメイン特化設定
+  - name: "technical_optimized"
+    description: "技術ドメイン最適化"
+    chunking: "fixed_size_1024"
+    embedding: "bge_large"
+    retrieval: "hybrid_search"
+    top_k: 8
+    domain: "technical"
+    
+  - name: "medical_safe"
+    description: "医学ドメイン安全設定"
+    chunking: "fixed_size_512"
+    embedding: "bge_base"
+    retrieval: "rerank_search"
+    top_k: 5
+    domain: "medical"
+    
+  - name: "legal_precise"
+    description: "法律ドメイン精密設定"
+    chunking: "semantic_strict"
+    embedding: "bge_large"
+    retrieval: "rerank_search"
+    top_k: 10
+    domain: "legal"
 
-class RAGASEvaluator:
-    def __init__(self):
-        self.metrics = [
-            faithfulness,
-            answer_relevancy,
-            context_precision,
-            context_recall,
-            context_relevancy,
-            answer_correctness,
-            answer_similarity
-        ]
-    
-    def prepare_dataset(self, queries: List[str], contexts: List[List[str]], 
-                       answers: List[str], ground_truths: List[str] = None) -> Dataset:
-        """RAGASフォーマットのデータセット準備"""
-        data = {
-            'question': queries,
-            'contexts': contexts,
-            'answer': answers
-        }
-        
-        if ground_truths:
-            data['ground_truth'] = ground_truths
-        
-        return Dataset.from_dict(data)
-    
-    def evaluate_rag_system(self, dataset: Dataset) -> Dict[str, float]:
-        """RAGASメトリクスによる評価"""
-        try:
-            result = evaluate(
-                dataset=dataset,
-                metrics=self.metrics
-            )
-            return result
-        except Exception as e:
-            print(f"RAGAS evaluation error: {e}")
-            return {}
-    
-    def batch_evaluate(self, test_data: List[Dict[str, Any]]) -> pd.DataFrame:
-        """バッチ評価の実行"""
-        queries = [item['query'] for item in test_data]
-        contexts = [item['contexts'] for item in test_data]
-        answers = [item['answer'] for item in test_data]
-        ground_truths = [item.get('ground_truth', '') for item in test_data]
-        
-        dataset = self.prepare_dataset(queries, contexts, answers, ground_truths)
-        results = self.evaluate_rag_system(dataset)
-        
-        return pd.DataFrame([results])
-```
-
-### `src/evaluation/llm_judge.py`
-```python
-import openai
-from typing import Dict, List, Any
-import json
-import time
-
-class LLMJudgeEvaluator:
-    def __init__(self, judge_model: str = "gpt-4-turbo"):
-        self.judge_model = judge_model
-        self.client = openai.OpenAI()
-    
-    def create_evaluation_prompt(self, query: str, context: str, response: str, 
-                               reference: str = None) -> str:
-        """評価用プロンプトの生成"""
-        prompt = f"""
-あなたはRAGシステムの応答品質を評価する専門家です。以下の観点で応答を評価してください：
-
-【クエリ】
-{query}
-
-【取得されたコンテキスト】
-{context}
-
-【生成された応答】
-{response}
-
-{f"【参考回答】\n{reference}" if reference else ""}
-
-【評価観点】
-1. 事実的正確性 (1-5): 応答に含まれる情報が正確かどうか
-2. クエリ関連性 (1-5): 応答がクエリに適切に答えているかどうか
-3. コンテキスト活用 (1-5): 提供されたコンテキストを適切に活用しているかどうか
-4. 完全性 (1-5): 応答が十分に詳細で包括的かどうか
-5. 総合品質 (1-5): 全体的な応答品質
-
-【回答フォーマット】
-以下のJSON形式で回答してください：
-{{
-    "factual_accuracy": {{
-        "score": <1-5の数値>,
-        "reasoning": "<評価理由>"
-    }},
-    "relevance_to_query": {{
-        "score": <1-5の数値>,
-        "reasoning": "<評価理由>"
-    }},
-    "context_utilization": {{
-        "score": <1-5の数値>,
-        "reasoning": "<評価理由>"
-    }},
-    "completeness": {{
-        "score": <1-5の数値>,
-        "reasoning": "<評価理由>"
-    }},
-    "overall_quality": {{
-        "score": <1-5の数値>,
-        "reasoning": "<評価理由>"
-    }}
-}}
-"""
-        return prompt
-    
-    def evaluate_response(self, query: str, context: str, response: str, 
-                         reference: str = None) -> Dict[str, Any]:
-        """単一応答の評価"""
-        prompt = self.create_evaluation_prompt(query, context, response, reference)
-        
-        try:
-            response = self.client.chat.completions.create(
-                model=self.judge_model,
-                messages=[
-                    {"role": "system", "content": "あなたは公正で一貫性のある評価を行うAI評価者です。"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1
-            )
-            
-            result_text = response.choices[0].message.content
-            # JSONの抽出と解析
-            result_json = self.extract_json_from_response(result_text)
-            return result_json
-            
-        except Exception as e:
-            print(f"LLM Judge evaluation error: {e}")
-            return self.get_default_scores()
-    
-    def extract_json_from_response(self, response_text: str) -> Dict[str, Any]:
-        """レスポンスからJSONを抽出"""
-        try:
-            # JSONブロックの検索
-            start_idx = response_text.find('{')
-            end_idx = response_text.rfind('}') + 1
-            
-            if start_idx != -1 and end_idx != 0:
-                json_str = response_text[start_idx:end_idx]
-                return json.loads(json_str)
-            else:
-                return self.get_default_scores()
-        except json.JSONDecodeError:
-            return self.get_default_scores()
-    
-    def get_default_scores(self) -> Dict[str, Any]:
-        """デフォルトスコア"""
-        return {
-            "factual_accuracy": {"score": 3, "reasoning": "評価エラー"},
-            "relevance_to_query": {"score": 3, "reasoning": "評価エラー"},
-            "context_utilization": {"score": 3, "reasoning": "評価エラー"},
-            "completeness": {"score": 3, "reasoning": "評価エラー"},
-            "overall_quality": {"score": 3, "reasoning": "評価エラー"}
-        }
-    
-    def batch_evaluate(self, test_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """バッチ評価"""
-        results = []
-        
-        for item in test_data:
-            time.sleep(1)  # API制限対策
-            result = self.evaluate_response(
-                query=item['query'],
-                context=item.get('context', ''),
-                response=item['response'],
-                reference=item.get('reference')
-            )
-            results.append(result)
-        
-        return results
-```
-
-### `src/evaluation/component_evaluator.py`
-```python
-import numpy as np
-from typing import List, Dict, Any
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from sentence_transformers import SentenceTransformer
-
-class ComponentLevelEvaluator:
-    def __init__(self):
-        self.semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
-    
-    def evaluate_chunk_quality(self, chunks: List[str]) -> Dict[str, float]:
-        """チャンクの品質評価"""
-        results = {}
-        
-        # セマンティック一貫性の評価
-        results['semantic_coherence'] = self.calculate_semantic_coherence(chunks)
-        
-        # 情報密度の評価
-        results['information_density'] = self.calculate_information_density(chunks)
-        
-        # 重複分析
-        results['overlap_score'] = self.calculate_overlap_analysis(chunks)
-        
-        return results
-    
-    def calculate_semantic_coherence(self, chunks: List[str]) -> float:
-        """セマンティック一貫性の計算"""
-        if len(chunks) < 2:
-            return 1.0
-        
-        embeddings = self.semantic_model.encode(chunks)
-        
-        # クラスタリングによる一貫性評価
-        if len(chunks) >= 2:
-            n_clusters = min(len(chunks) // 2, 10)
-            if n_clusters < 2:
-                n_clusters = 2
-            
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            cluster_labels = kmeans.fit_predict(embeddings)
-            
-            # シルエット係数で一貫性を測定
-            silhouette_avg = silhouette_score(embeddings, cluster_labels)
-            return max(0, silhouette_avg)  # 負の値を0にクリップ
-        
-        return 0.5
-    
-    def calculate_information_density(self, chunks: List[str]) -> float:
-        """情報密度の計算"""
-        if not chunks:
-            return 0.0
-        
-        # 単語の多様性を情報密度の指標として使用
-        all_words = []
-        for chunk in chunks:
-            words = chunk.lower().split()
-            all_words.extend(words)
-        
-        if not all_words:
-            return 0.0
-        
-        unique_words = set(all_words)
-        density = len(unique_words) / len(all_words)
-        return density
-    
-    def calculate_overlap_analysis(self, chunks: List[str]) -> float:
-        """重複分析"""
-        if len(chunks) < 2:
-            return 0.0
-        
-        total_overlap = 0
-        comparisons = 0
-        
-        for i in range(len(chunks)):
-            for j in range(i + 1, len(chunks)):
-                words_i = set(chunks[i].lower().split())
-                words_j = set(chunks[j].lower().split())
-                
-                if words_i or words_j:
-                    overlap = len(words_i & words_j) / len(words_i | words_j)
-                    total_overlap += overlap
-                    comparisons += 1
-        
-        return total_overlap / comparisons if comparisons > 0 else 0.0
-    
-    def evaluate_embedding_quality(self, embeddings: np.ndarray, texts: List[str]) -> Dict[str, float]:
-        """埋め込みの品質評価"""
-        results = {}
-        
-        # クラスター品質
-        results['cluster_quality'] = self.calculate_cluster_quality(embeddings)
-        
-        # セマンティック保存性
-        results['semantic_preservation'] = self.calculate_semantic_preservation(embeddings, texts)
-        
-        # 次元解析
-        results['dimensionality_score'] = self.calculate_dimensionality_score(embeddings)
-        
-        return results
-    
-    def calculate_cluster_quality(self, embeddings: np.ndarray) -> float:
-        """クラスター品質の計算"""
-        if len(embeddings) < 2:
-            return 1.0
-        
-        n_clusters = min(len(embeddings) // 2, 10)
-        if n_clusters < 2:
-            return 0.5
-        
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        cluster_labels = kmeans.fit_predict(embeddings)
-        
-        return max(0, silhouette_score(embeddings, cluster_labels))
-    
-    def calculate_semantic_preservation(self, embeddings: np.ndarray, texts: List[str]) -> float:
-        """セマンティック保存性の計算"""
-        # テキスト間の類似度と埋め込み間の類似度の相関を計算
-        if len(texts) < 2:
-            return 1.0
-        
-        # 簡略化された実装
-        return 0.8  # 実際にはより複雑な計算が必要
-    
-    def calculate_dimensionality_score(self, embeddings: np.ndarray) -> float:
-        """次元解析スコア"""
-        # PCAによる次元解析
-        from sklearn.decomposition import PCA
-        
-        if len(embeddings) < 2:
-            return 1.0
-        
-        pca = PCA()
-        pca.fit(embeddings)
-        
-        # 累積寄与率から次元の有効性を評価
-        cumsum_ratio = np.cumsum(pca.explained_variance_ratio_)
-        effective_dims = np.argmax(cumsum_ratio > 0.95) + 1
-        
-        # 有効次元の比率
-        dimensionality_score = effective_dims / len(embeddings[0])
-        return min(1.0, dimensionality_score)
-```
-
-### `src/evaluation/statistical_validator.py`
-```python
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Tuple
-from scipy import stats
-from scipy.stats import wilcoxon, mannwhitneyu
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-class StatisticalValidator:
-    def __init__(self, significance_threshold: float = 0.05, 
-                 effect_size_threshold: float = 0.2):
-        self.significance_threshold = significance_threshold
-        self.effect_size_threshold = effect_size_threshold
-    
-    def compare_configurations(self, results_a: List[float], 
-                             results_b: List[float], 
-                             metric_name: str) -> Dict[str, Any]:
-        """2つの設定の統計的比較"""
-        
-        # 正規性検定
-        normality_a = self.test_normality(results_a)
-        normality_b = self.test_normality(results_b)
-        
-        # 適切な検定の選択
-        if normality_a and normality_b and len(results_a) == len(results_b):
-            # 対応ありt検定
-            statistic, p_value = stats.ttest_rel(results_a, results_b)
-            test_type = "paired_t_test"
-        elif normality_a and normality_b:
-            # 対応なしt検定
-            statistic, p_value = stats.ttest_ind(results_a, results_b)
-            test_type = "independent_t_test"
-        elif len(results_a) == len(results_b):
-            # Wilcoxon符号順位検定
-            statistic, p_value = wilcoxon(results_a, results_b)
-            test_type = "wilcoxon_signed_rank"
-        else:
-            # Mann-Whitney U検定
-            statistic, p_value = mannwhitneyu(results_a, results_b)
-            test_type = "mann_whitney_u"
-        
-        # 効果量の計算
-        effect_size = self.calculate_effect_size(results_a, results_b)
-        
-        # 信頼区間の計算
-        confidence_interval = self.calculate_confidence_interval(results_a, results_b)
-        
-        return {
-            'metric_name': metric_name,
-            'test_type': test_type,
-            'statistic': statistic,
-            'p_value': p_value,
-            'statistically_significant': p_value < self.significance_threshold,
-            'effect_size': effect_size,
-            'effect_size_magnitude': self.interpret_effect_size(effect_size),
-            'practically_significant': abs(effect_size) > self.effect_size_threshold,
-            'confidence_interval': confidence_interval,
-            'mean_difference': np.mean(results_b) - np.mean(results_a),
-            'median_difference': np.median(results_b) - np.median(results_a)
-        }
-    
-    def test_normality(self, data: List[float]) -> bool:
-        """正規性検定"""
-        if len(data) < 3:
-            return False
-        
-        # Shapiro-Wilk検定
-        statistic, p_value = stats.shapiro(data)
-        return p_value > 0.05
-    
-    def calculate_effect_size(self, group_a: List[float], group_b: List[float]) -> float:
-        """Cohen's dによる効果量計算"""
-        mean_a = np.mean(group_a)
-        mean_b = np.mean(group_b)
-        
-        # プールされた標準偏差
-        n_a, n_b = len(group_a), len(group_b)
-        pooled_std = np.sqrt(((n_a - 1) * np.var(group_a, ddof=1) + 
-                             (n_b - 1) * np.var(group_b, ddof=1)) / (n_a + n_b - 2))
-        
-        if pooled_std == 0:
-            return 0.0
-        
-        return (mean_b - mean_a) / pooled_std
-    
-    def interpret_effect_size(self, effect_size: float) -> str:
-        """効果量の解釈"""
-        abs_effect = abs(effect_size)
-        
-        if abs_effect < 0.2:
-            return "negligible"
-        elif abs_effect < 0.5:
-            return "small"
-        elif abs_effect < 0.8:
-            return "medium"
-        else:
-            return "large"
-    
-    def calculate_confidence_interval(self, group_a: List[float], 
-                                    group_b: List[float], 
-                                    confidence: float = 0.95) -> Tuple[float, float]:
-        """平均差の信頼区間"""
-        diff = np.array(group_b) - np.array(group_a) if len(group_a) == len(group_b) else []
-        
-        if len(diff) == 0:
-            # 独立サンプルの場合
-            mean_diff = np.mean(group_b) - np.mean(group_a)
-            se_diff = np.sqrt(np.var(group_a, ddof=1)/len(group_a) + np.var(group_b, ddof=1)/len(group_b))
-            df = len(group_a) + len(group_b) - 2
-        else:
-            # 対応サンプルの場合
-            mean_diff = np.mean(diff)
-            se_diff = np.std(diff, ddof=1) / np.sqrt(len(diff))
-            df = len(diff) - 1
-        
-        alpha = 1 - confidence
-        t_critical = stats.t.ppf(1 - alpha/2, df)
-        
-        margin_error = t_critical * se_diff
-        return (mean_diff - margin_error, mean_diff + margin_error)
-    
-    def multiple_comparison_correction(self, p_values: List[float], 
-                                     method: str = "bonferroni") -> List[float]:
-        """多重比較補正"""
-        if method == "bonferroni":
-            return [min(p * len(p_values), 1.0) for p in p_values]
-        elif method == "holm":
-            # Holm法
-            sorted_indices = np.argsort(p_values)
-            corrected_p = [0] * len(p_values)
-            
-            for i, idx in enumerate(sorted_indices):
-                corrected_p[idx] = min(p_values[idx] * (len(p_values) - i), 1.0)
-                if i > 0:
-                    corrected_p[idx] = max(cor
+# 評価設定
+evaluation_settings:
+  # データパス
+  documents_path: "data/documents/"
+  test_queries_path: "data/test_queries.json"
+  ground_truth_path: "data/ground_truth.json"
+  
+  # 評価メトリクス
+  metrics:
+    - "component_le
