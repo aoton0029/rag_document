@@ -7,6 +7,7 @@ rag-evaluation-framework-v2/
 │   ├── chunking_configs.yaml
 │   ├── embedding_configs.yaml
 │   ├── evaluation_configs.yaml
+│   ├── test_patterns.yaml
 │   └── domain_configs.yaml
 ├── src/
 │   ├── __init__.py
