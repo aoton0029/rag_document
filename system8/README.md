@@ -1,6 +1,6 @@
-## 改良版プロジェクト構造
+## プロジェクト構造
 ```
-rag-evaluation-framework-v2/
+rag-evaluation-framework/
 ├── README.md
 ├── requirements.txt
 ├── config/
