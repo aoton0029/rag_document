@@ -46,8 +46,7 @@ rag-evaluation-framework-v2/
 │       └── domain_adapter.py
 ├── tests/
 ├── data/
-├── results/
-└── notebooks/
+└── results/
 ```
 
 ## 改良版主要ファイル
