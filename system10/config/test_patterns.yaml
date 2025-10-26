@@ -1,0 +1,296 @@
+# テストパターン設定ファイル
+# 実験で試行する組み合わせパターンを定義
+
+# 実験パターンの定義
+# 因子: チャンキング手法、インデックスタイプ、埋め込みモデル、LLM、AdvancedRAGパラメータ
+
+test_patterns:
+  # ベースライン実験
+  baseline_001:
+    name: "Baseline - Token Chunking + Vector Index + Ollama"
+    description: "基本的な構成でのベースライン実験"
+    enabled: true
+    config:
+      chunking:
+        method: "token_based"
+        chunk_size: 512
+        chunk_overlap: 50
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "vector"
+        vector_store: "milvus"
+      retrieval:
+        retriever_type: "vector"
+        similarity_top_k: 10
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        response_mode: "compact"
+  
+  # セマンティックチャンキング実験
+  semantic_chunking_001:
+    name: "Semantic Chunking + Vector Index"
+    description: "セマンティックチャンキングを使用"
+    enabled: true
+    config:
+      chunking:
+        method: "semantic_splitter"
+        buffer_size: 1
+        breakpoint_percentile_threshold: 95
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "vector"
+        vector_store: "milvus"
+      retrieval:
+        retriever_type: "vector"
+        similarity_top_k: 10
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        response_mode: "tree_summarize"
+  
+  # ハイブリッドRetrieval実験
+  hybrid_retrieval_001:
+    name: "Hybrid Retrieval with Query Fusion"
+    description: "QueryFusionRetrieverを使用したハイブリッド検索"
+    enabled: true
+    config:
+      chunking:
+        method: "sentence_splitter"
+        chunk_size: 512
+        chunk_overlap: 50
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "vector"
+        vector_store: "milvus"
+      retrieval:
+        retriever_type: "query_fusion"
+        num_queries: 4
+        mode: "reciprocal_rerank"
+        similarity_top_k: 10
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        response_mode: "compact"
+  
+  # Knowledge Graph実験
+  knowledge_graph_001:
+    name: "Knowledge Graph RAG"
+    description: "ナレッジグラフインデックスを使用"
+    enabled: true
+    config:
+      chunking:
+        method: "token_based"
+        chunk_size: 512
+        chunk_overlap: 50
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "knowledge_graph"
+        graph_store: "neo4j"
+      retrieval:
+        retriever_type: "knowledge_graph"
+        include_embeddings: true
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        response_mode: "compact"
+  
+  # Document Summary Index実験
+  document_summary_001:
+    name: "Document Summary Index"
+    description: "ドキュメントサマリーインデックスを使用"
+    enabled: true
+    config:
+      chunking:
+        method: "sentence_splitter"
+        chunk_size: 1024
+        chunk_overlap: 100
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "document_summary"
+      retrieval:
+        retriever_type: "summary_embedding"
+        similarity_top_k: 5
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        response_mode: "tree_summarize"
+  
+  # Auto Merging Retrieval実験
+  auto_merging_001:
+    name: "Auto Merging Retrieval"
+    description: "AutoMergingRetrieverを使用"
+    enabled: true
+    config:
+      chunking:
+        method: "hierarchical"
+        chunk_sizes: [2048, 512, 128]
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "vector"
+        vector_store: "milvus"
+      retrieval:
+        retriever_type: "auto_merging"
+        simple_ratio_thresh: 0.5
+        similarity_top_k: 12
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        response_mode: "compact"
+  
+  # Advanced RAG with Reranker実験
+  advanced_rag_reranker_001:
+    name: "Advanced RAG with Reranker"
+    description: "Rerankerを使用した高度なRAG"
+    enabled: true
+    config:
+      chunking:
+        method: "token_based"
+        chunk_size: 512
+        chunk_overlap: 50
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "vector"
+        vector_store: "milvus"
+      retrieval:
+        retriever_type: "vector"
+        similarity_top_k: 20
+        postprocessors:
+          - type: "similarity"
+            similarity_cutoff: 0.7
+          - type: "reranker"
+            top_n: 10
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        response_mode: "compact"
+  
+  # Multi-step Query実験
+  multi_step_query_001:
+    name: "Multi-step Query Engine"
+    description: "MultiStepQueryEngineを使用"
+    enabled: true
+    config:
+      chunking:
+        method: "sentence_splitter"
+        chunk_size: 512
+        chunk_overlap: 50
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "vector"
+        vector_store: "milvus"
+      retrieval:
+        retriever_type: "vector"
+        similarity_top_k: 10
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        engine_type: "multi_step"
+        num_steps: 3
+        response_mode: "refine"
+  
+  # Router Query Engine実験
+  router_query_001:
+    name: "Router Query Engine"
+    description: "RouterQueryEngineで複数のインデックスを使い分け"
+    enabled: true
+    config:
+      chunking:
+        method: "token_based"
+        chunk_size: 512
+        chunk_overlap: 50
+      embedding:
+        backend: "ollama"
+        model: "qwen3-embedding:8b"
+      indexing:
+        type: "multi"
+        indices:
+          - type: "vector"
+            name: "vector_index"
+          - type: "summary"
+            name: "summary_index"
+      retrieval:
+        retriever_type: "router"
+        selector_type: "llm_single"
+      llm:
+        model: "ollama_qwen3_32b"
+      query:
+        engine_type: "router"
+        response_mode: "compact"
+
+# 一括実験パターン (全組み合わせ実験)
+batch_experiments:
+  full_factorial_small:
+    description: "小規模な全因子実験"
+    enabled: false
+    factors:
+      chunking:
+        - "token_based"
+        - "sentence_splitter"
+      embedding:
+        - backend: "ollama"
+          model: "qwen3-embedding:8b"
+      indexing:
+        - "vector"
+      llm:
+        - "ollama_qwen3_32b"
+      retrieval:
+        similarity_top_k: [5, 10, 20]
+        
+  advanced_rag_comparison:
+    description: "Advanced RAG手法の比較実験"
+    enabled: false
+    factors:
+      chunking:
+        - "token_based"
+      embedding:
+        - backend: "ollama"
+          model: "qwen3-embedding:8b"
+      indexing:
+        - "vector"
+      retrieval:
+        retriever_types:
+          - "vector"
+          - "query_fusion"
+          - "auto_merging"
+      llm:
+        - "ollama_qwen3_32b"
+
+# 評価設定
+evaluation:
+  metrics:
+    - "faithfulness"
+    - "relevancy"
+    - "correctness"
+  queries:
+    - "この文書の主要なトピックは何ですか？"
+    - "重要なポイントを3つ挙げてください。"
+    - "この文書の結論を要約してください。"
+    - "著者の主張は何ですか？"
+    - "具体例を1つ挙げてください。"
+  reference_answers: null  # 参照回答がある場合はここに記載
+
+# 実験実行設定
+execution:
+  seed: 42
+  parallel: false
+  max_workers: 4
+  save_intermediate: true
+  results_dir: "results"
+  log_level: "INFO"

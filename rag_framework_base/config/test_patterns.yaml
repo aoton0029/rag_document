@@ -1,129 +1,342 @@
-# Test pattern configurations for RAG evaluation framework
-test_patterns:
-  # Basic patterns - single variable change
-  basic_patterns:
-    chunking_comparison:
-      description: "Compare different chunking strategies"
-      variables:
-        chunking_strategy: ["semantic", "fixed_size", "sentence_based", "recursive", "token_based"]
-      fixed_parameters:
-        embedding_model: "ollama_qwen"
-        llm_model: "qwen3_32b"
-        retrieval_k: 5
-        
-    embedding_comparison:
-      description: "Compare different embedding models"
-      variables:
-        embedding_model: ["ollama_qwen", "huggingface", "openai"]
-      fixed_parameters:
-        chunking_strategy: "semantic"
-        llm_model: "qwen3_32b"
-        retrieval_k: 5
-        
-    llm_comparison:
-      description: "Compare different LLM models"
-      variables:
-        llm_model: ["qwen3_32b", "gpt_oss_120b"]
-      fixed_parameters:
-        chunking_strategy: "semantic"
-        embedding_model: "ollama_qwen"
-        retrieval_k: 5
-        
-    retrieval_k_comparison:
-      description: "Compare different retrieval k values"
-      variables:
-        retrieval_k: [1, 3, 5, 10, 15, 20]
-      fixed_parameters:
-        chunking_strategy: "semantic"
-        embedding_model: "ollama_qwen"
-        llm_model: "qwen3_32b"
+# テストパターン設定ファイル
+# 実験パターンの組み合わせと試行設定
 
-  # Advanced patterns - multi-variable optimization
-  advanced_patterns:
-    chunking_embedding_optimization:
-      description: "Optimize chunking and embedding combination"
-      variables:
-        chunking_strategy: ["semantic", "recursive"]
-        embedding_model: ["ollama_qwen", "huggingface"]
-        chunk_size: [256, 512, 1024]
-      fixed_parameters:
-        llm_model: "qwen3_32b"
-        retrieval_k: 5
-        
-    full_pipeline_optimization:
-      description: "Complete pipeline optimization"
-      variables:
-        chunking_strategy: ["semantic", "recursive"]
-        embedding_model: ["ollama_qwen", "huggingface"]
-        llm_model: ["qwen3_32b", "gpt_oss_120b"]
-        retrieval_k: [3, 5, 10]
-      constraints:
-        max_combinations: 24  # Limit to manageable number
-
-  # Domain-specific patterns
-  domain_patterns:
-    academic_paper_optimization:
-      description: "Optimization for academic papers"
-      domain: "academic_papers"
-      variables:
-        chunking_strategy: ["semantic", "recursive"]
-        chunk_size: [512, 1024]
-        chunk_overlap: [50, 100, 200]
-      fixed_parameters:
-        embedding_model: "ollama_qwen"
-        llm_model: "qwen3_32b"
-        
-    manual_optimization:
-      description: "Optimization for product manuals"
-      domain: "product_manuals"
-      variables:
-        chunking_strategy: ["fixed_size", "sentence_based"]
-        chunk_size: [256, 512]
-        retrieval_k: [3, 5, 8]
-      fixed_parameters:
-        embedding_model: "ollama_qwen"
-        llm_model: "qwen3_32b"
-
-# Experimental design
-experimental_design:
-  # A/B testing configurations
-  ab_testing:
-    baseline_configuration:
-      chunking_strategy: "semantic"
-      embedding_model: "ollama_qwen"
-      llm_model: "qwen3_32b"
-      retrieval_k: 5
+# 実験設計
+experiment_design:
+  # 実験タイプ
+  design_type: "factorial"  # factorial, fractional_factorial, random_search, grid_search
+  
+  # 因子設定
+  factors:
+    chunking_method:
+      type: "categorical"
+      values: ["token_based", "semantic_splitter", "sentence_splitter", "markdown_header"]
       
-    statistical_power: 0.8
-    significance_level: 0.05
-    minimum_effect_size: 0.1
-    
-  # Cross-validation settings
-  cross_validation:
-    k_folds: 5
-    stratified: true
-    random_seed: 42
-    
-  # Ablation studies
-  ablation_studies:
-    enable_chunking_ablation: true
-    enable_embedding_ablation: true
-    enable_retrieval_ablation: true
-    enable_generation_ablation: true
+    chunk_size:
+      type: "numerical"
+      values: [256, 512, 1024]
+      
+    embedding_model:
+      type: "categorical" 
+      values: ["ollama_qwen3", "sentence_transformers_multilingual", "openai_ada002"]
+      
+    llm_model:
+      type: "categorical"
+      values: ["ollama_qwen3_32b", "ollama_qwen3_8b", "openai_gpt35_turbo"]
+      
+    retrieval_top_k:
+      type: "numerical"
+      values: [3, 5, 10, 20]
+      
+    temperature:
+      type: "numerical"
+      values: [0.0, 0.1, 0.3]
 
-# Resource management
-resource_management:
+# 基本テストパターン
+basic_patterns:
+  # 最小構成パターン
+  minimal_pattern:
+    name: "minimal_test"
+    description: "最小構成でのベースライン測定"
+    config:
+      chunking:
+        method: "token_based"
+        chunk_size: 512
+        overlap: 50
+      embedding:
+        model: "sentence_transformers_multilingual" 
+      llm:
+        model: "ollama_qwen3_8b"
+        temperature: 0.0
+      retrieval:
+        top_k: 5
+        search_type: "similarity"
+      evaluation:
+        metrics: ["rouge", "exact_match"]
+        
+  # 標準パターン
+  standard_pattern:
+    name: "standard_test"
+    description: "標準的な構成での評価"
+    config:
+      chunking:
+        method: "token_based"
+        chunk_size: 512
+        overlap: 50
+      embedding:
+        model: "ollama_qwen3"
+      llm:
+        model: "ollama_qwen3_32b"
+        temperature: 0.0
+      retrieval:
+        top_k: 10
+        search_type: "similarity"
+      evaluation:
+        metrics: ["rouge", "bert_score", "exact_match", "f1_score"]
+        
+  # 高性能パターン
+  high_performance_pattern:
+    name: "high_performance_test"
+    description: "高性能モデルでの最大精度測定"
+    config:
+      chunking:
+        method: "semantic_splitter"
+        buffer_size: 1
+      embedding:
+        model: "openai_ada002"
+      llm:
+        model: "openai_gpt4"
+        temperature: 0.0
+      retrieval:
+        top_k: 10
+        search_type: "hybrid"
+        reranker: true
+      evaluation:
+        metrics: ["rouge", "bert_score", "exact_match", "f1_score", "semantic_similarity"]
+
+# AdvancedRAG手法パターン
+advanced_rag_patterns:
+  # ハイブリッド検索
+  hybrid_retrieval:
+    name: "hybrid_retrieval"
+    description: "ベクトル検索＋キーワード検索の組み合わせ"
+    config:
+      retrieval:
+        search_type: "hybrid"
+        vector_weight: 0.7
+        keyword_weight: 0.3
+        top_k: 10
+        
+  # リランカー使用
+  with_reranker:
+    name: "reranked_retrieval"
+    description: "リランカーを使用した検索精度向上"
+    config:
+      retrieval:
+        search_type: "similarity"
+        top_k: 20
+        reranker:
+          enabled: true
+          model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          top_n: 5
+          
+  # クエリ拡張
+  query_expansion:
+    name: "query_expansion"
+    description: "クエリ拡張による検索改善"
+    config:
+      query_processing:
+        expansion:
+          enabled: true
+          method: "llm_based"
+          llm_model: "ollama_qwen3_8b"
+          num_expansions: 3
+          
+  # マルチクエリ検索
+  multi_query:
+    name: "multi_query_retrieval"
+    description: "複数クエリ生成による検索網羅性向上"
+    config:
+      query_processing:
+        multi_query:
+          enabled: true
+          num_queries: 3
+          aggregation_method: "reciprocal_rank_fusion"
+          
+  # 階層的検索
+  hierarchical_retrieval:
+    name: "hierarchical_retrieval"
+    description: "階層的検索による精度向上"
+    config:
+      retrieval:
+        search_type: "hierarchical"
+        levels:
+          - chunk_level: "sentence"
+            top_k: 20
+          - chunk_level: "paragraph" 
+            top_k: 10
+          - chunk_level: "section"
+            top_k: 5
+
+# 包括的テストスイート
+comprehensive_test_suite:
+  # チャンキング手法比較
+  chunking_comparison:
+    name: "chunking_methods_comparison"
+    description: "全チャンキング手法の性能比較"
+    patterns:
+      - chunking_method: "token_based"
+        chunk_sizes: [256, 512, 1024]
+      - chunking_method: "semantic_splitter"
+        parameters: ["default"]
+      - chunking_method: "sentence_splitter" 
+        parameters: ["default"]
+      - chunking_method: "markdown_header"
+        parameters: ["default"]
+        
+  # 埋め込みモデル比較
+  embedding_comparison:
+    name: "embedding_models_comparison"
+    description: "全埋め込みモデルの性能比較"
+    patterns:
+      - embedding_model: "ollama_qwen3"
+      - embedding_model: "sentence_transformers_multilingual"
+      - embedding_model: "sentence_transformers_large"
+      - embedding_model: "openai_ada002"
+      
+  # LLMモデル比較
+  llm_comparison:
+    name: "llm_models_comparison"
+    description: "全LLMモデルの性能比較"
+    patterns:
+      - llm_model: "ollama_qwen3_32b"
+      - llm_model: "ollama_qwen3_8b"
+      - llm_model: "openai_gpt35_turbo"
+      - llm_model: "openai_gpt4"
+
+# A/Bテストパターン
+ab_test_patterns:
+  # ベースライン vs 改良版
+  baseline_vs_improved:
+    name: "baseline_vs_improved"
+    description: "ベースライン構成と改良構成の比較"
+    control_group:
+      chunking_method: "token_based"
+      chunk_size: 512
+      embedding_model: "sentence_transformers_multilingual"
+      llm_model: "ollama_qwen3_8b"
+    treatment_group:
+      chunking_method: "semantic_splitter"
+      embedding_model: "ollama_qwen3"
+      llm_model: "ollama_qwen3_32b"
+      retrieval_reranker: true
+      
+  # 速度 vs 精度
+  speed_vs_accuracy:
+    name: "speed_vs_accuracy_tradeoff"
+    description: "処理速度と精度のトレードオフ分析"
+    fast_config:
+      chunk_size: 256
+      embedding_model: "sentence_transformers_multilingual"
+      llm_model: "ollama_qwen3_8b"
+      retrieval_top_k: 3
+    accurate_config:
+      chunk_size: 1024
+      embedding_model: "openai_ada002"
+      llm_model: "openai_gpt4"
+      retrieval_top_k: 10
+      retrieval_reranker: true
+
+# 実験実行設定
+experiment_execution:
+  # 実行順序
+  execution_order: "randomized"  # sequential, randomized, prioritized
+  
+  # 並列実行
   parallel_execution:
-    max_workers: 4
-    gpu_allocation: "auto"
-    memory_limit: "16GB"
+    enabled: true
+    max_concurrent_experiments: 2
+    resource_allocation:
+      cpu_cores_per_experiment: 2
+      memory_limit_per_experiment: "4GB"
+      
+  # 再現性設定
+  reproducibility:
+    seed: 42
+    deterministic_mode: true
+    save_all_configs: true
     
-  caching:
-    enable_embedding_cache: true
-    enable_retrieval_cache: true
-    cache_ttl: 3600  # seconds
+  # タイムアウト設定
+  timeouts:
+    per_document_timeout: 300  # 5分
+    per_experiment_timeout: 3600  # 1時間
+    total_suite_timeout: 86400  # 24時間
+
+# 実験メタデータ
+experiment_metadata:
+  # 実験情報
+  experiment_info:
+    researcher: "RAG Evaluation Team"
+    project: "RAG Optimization"
+    version: "v1.0"
     
-  monitoring:
-    log_level: "INFO"
-    enable_progress_bars: true
-    save_intermediate_results: true
+  # 実行環境
+  environment:
+    track_system_specs: true
+    track_dependencies: true
+    track_git_commit: true
+    
+  # データ管理
+  data_management:
+    input_data_hash: true
+    output_data_versioning: true
+    intermediate_results_saving: true
+
+# 統計分析設定
+statistical_analysis:
+  # 有意性検定
+  significance_testing:
+    enabled: true
+    alpha: 0.05
+    test_type: "welch_t_test"  # welch_t_test, mann_whitney, wilcoxon
+    
+  # 効果サイズ
+  effect_size:
+    calculate: true
+    method: "cohen_d"  # cohen_d, glass_delta, hedges_g
+    
+  # 信頼区間
+  confidence_intervals:
+    enabled: true
+    confidence_level: 0.95
+    
+  # 多重比較補正
+  multiple_comparison_correction:
+    enabled: true
+    method: "bonferroni"  # bonferroni, fdr_bh, holm
+
+# 結果分析設定  
+result_analysis:
+  # 自動分析
+  automatic_analysis:
+    performance_ranking: true
+    best_configuration_identification: true
+    statistical_significance_analysis: true
+    
+  # レポート生成
+  report_generation:
+    summary_report: true
+    detailed_analysis: true
+    visualization_charts: true
+    
+  # 推奨設定
+  recommendations:
+    generate_recommendations: true
+    criteria: ["accuracy", "speed", "cost", "robustness"]
+    
+# 品質管理
+quality_assurance:
+  # 実験検証
+  experiment_validation:
+    config_validation: true
+    data_integrity_check: true
+    result_sanity_check: true
+    
+  # エラーハンドリング
+  error_handling:
+    continue_on_error: false
+    retry_failed_experiments: true
+    max_retries: 3
+    
+  # 結果検証
+  result_validation:
+    cross_validation: false
+    bootstrap_sampling: false
+    outlier_detection: true
+
+# デフォルト実験設定
+default_experiment:
+  pattern: "standard_pattern"
+  execution_mode: "single"
+  save_intermediate_results: true
+  generate_report: true

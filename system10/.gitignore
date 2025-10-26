@@ -1,0 +1,131 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Results and Logs
+results/
+*.log
+logs/
+
+# Data files
+data/documents/*.pdf
+data/documents/*.docx
+data/raw/
+data/processed/
+
+# Keep example files but ignore actual data
+!data/documents/.gitkeep
+!data/.gitkeep
+
+# Database files
+*.db
+*.sqlite
+
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Model files
+models/
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# Cache
+.cache/
+*.cache
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Compiled files
+*.pyc
+*.pyo
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyright
+pyrightconfig.json
+
+# Docker
+.docker/
+
+# Backup files
+*.bak
+*~
+
+# Configuration overrides (keep base configs)
+config/*_local.yaml
+config/*_override.yaml
+
+# Experiment specific results (keep structure)
+results/logs/*.log
+results/metrics/*.csv
+results/metrics/*.json
+results/configs/*.yaml
+!results/logs/.gitkeep
+!results/metrics/.gitkeep
+!results/configs/.gitkeep
+
+# Large files
+*.tar
+*.tar.gz
+*.zip
+*.rar

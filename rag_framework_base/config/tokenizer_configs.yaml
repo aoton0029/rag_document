@@ -1,0 +1,223 @@
+# トークナイザー設定ファイル
+# トークン計算とトークン長制御のための設定
+
+tokenizers:
+  # TikToken系 (OpenAI互換)
+  tiktoken_gpt4:
+    type: "tiktoken"
+    encoding_name: "cl100k_base"  # GPT-4, GPT-3.5-turbo
+    model_name: "gpt-4"
+    max_tokens: 8192
+    
+  tiktoken_gpt35:
+    type: "tiktoken"
+    encoding_name: "cl100k_base"
+    model_name: "gpt-3.5-turbo"
+    max_tokens: 4096
+    
+  tiktoken_ada:
+    type: "tiktoken"
+    encoding_name: "cl100k_base"
+    model_name: "text-embedding-ada-002"
+    max_tokens: 8191
+    
+  # HuggingFace Transformers
+  huggingface_qwen:
+    type: "huggingface"
+    model_name: "Qwen/Qwen3-32B"
+    tokenizer_name: "Qwen/Qwen3-32B"
+    max_tokens: 32768
+    padding: false
+    truncation: true
+    add_special_tokens: true
+    
+  huggingface_llama:
+    type: "huggingface"
+    model_name: "meta-llama/Llama-3-8B"
+    tokenizer_name: "meta-llama/Llama-3-8B"
+    max_tokens: 8192
+    padding: false
+    truncation: true
+    add_special_tokens: true
+    
+  # SentencePiece
+  sentencepiece_multilingual:
+    type: "sentencepiece"
+    model_path: "./models/tokenizers/multilingual.model"
+    vocab_size: 32000
+    max_tokens: 2048
+    
+  # 文字ベース（フォールバック）
+  character_based:
+    type: "character"
+    characters_per_token: 4  # 平均的な文字数/トークン
+    max_tokens: 8192
+
+# トークンカウンタ設定
+token_counters:
+  default:
+    tokenizer: "tiktoken_gpt4"
+    
+  embedding_focused:
+    tokenizer: "tiktoken_ada"
+    
+  model_specific:
+    qwen: "huggingface_qwen"
+    llama: "huggingface_llama"
+    gpt4: "tiktoken_gpt4"
+    gpt35: "tiktoken_gpt35"
+
+# トークン長制御設定
+token_length_control:
+  chunk_processing:
+    max_chunk_tokens: 512
+    overlap_tokens: 50
+    truncation_strategy: "end"  # start, end, middle
+    preserve_sentences: true
+    
+  query_processing:
+    max_query_tokens: 256
+    truncation_strategy: "end"
+    preserve_complete_words: true
+    
+  context_window_management:
+    max_context_tokens: 4096
+    reserved_tokens_for_response: 512
+    context_compression_ratio: 0.8
+    priority_sections: ["conclusion", "summary", "abstract"]
+
+# PromptHelper統合設定
+prompt_helper_integration:
+  default:
+    context_window: 4096
+    num_output: 512
+    chunk_overlap_ratio: 0.1
+    chunk_size_limit: null
+    separator: "\n\n"
+    
+  large_context:
+    context_window: 8192
+    num_output: 1024
+    chunk_overlap_ratio: 0.2
+    chunk_size_limit: null
+    separator: "\n\n"
+    
+  small_context:
+    context_window: 2048
+    num_output: 256
+    chunk_overlap_ratio: 0.1
+    chunk_size_limit: 1000
+    separator: "\n"
+
+# 言語別設定
+language_settings:
+  japanese:
+    tokenizer: "huggingface_qwen"  # 日本語対応モデル
+    characters_per_token: 2.5  # 日本語の平均
+    sentence_separators: ["。", "！", "？", "\n"]
+    word_separators: ["、", " ", "　"]
+    
+  english:
+    tokenizer: "tiktoken_gpt4"
+    characters_per_token: 4.0
+    sentence_separators: [".", "!", "?", "\n"]
+    word_separators: [",", " ", "-"]
+    
+  multilingual:
+    tokenizer: "sentencepiece_multilingual"
+    characters_per_token: 3.5
+    sentence_separators: [".", "。", "!", "！", "?", "？", "\n"]
+    word_separators: [",", "、", " ", "　", "-"]
+
+# バッチ処理設定
+batch_processing:
+  enabled: true
+  batch_size: 100
+  max_concurrent_batches: 4
+  timeout_per_batch: 30
+  
+# キャッシュ設定
+caching:
+  enabled: true
+  cache_dir: "./cache/tokens"
+  cache_ttl: 86400  # 24時間
+  max_cache_entries: 10000
+  
+# パフォーマンス最適化
+performance_optimization:
+  precompile_regex: true
+  use_fast_tokenizers: true
+  cache_vocabulary: true
+  parallel_processing: true
+  max_workers: 4
+
+# デフォルト設定
+default_settings:
+  tokenizer: "tiktoken_gpt4"
+  token_counter: "default"
+  language: "multilingual"
+  prompt_helper_config: "default"
+
+# 実験用パターン
+experiment_patterns:
+  pattern_1:
+    name: "gpt4_optimized"
+    tokenizer: "tiktoken_gpt4"
+    max_tokens: 8192
+    
+  pattern_2:
+    name: "qwen_optimized"
+    tokenizer: "huggingface_qwen"
+    max_tokens: 32768
+    
+  pattern_3:
+    name: "embedding_optimized"
+    tokenizer: "tiktoken_ada"
+    max_tokens: 8191
+    
+  pattern_4:
+    name: "fast_processing"
+    tokenizer: "character_based"
+    max_tokens: 8192
+    
+  pattern_5:
+    name: "japanese_focused"
+    tokenizer: "huggingface_qwen"
+    language: "japanese"
+    
+  pattern_6:
+    name: "small_context"
+    tokenizer: "tiktoken_gpt35"
+    max_tokens: 4096
+
+# 検証設定
+validation:
+  check_token_limits: true
+  validate_encoding: true
+  warn_on_truncation: true
+  log_token_usage: true
+  
+# エラーハンドリング
+error_handling:
+  fallback_tokenizer: "character_based"
+  handle_special_characters: true
+  normalize_unicode: true
+  remove_control_characters: true
+  
+# メトリクス収集
+metrics:
+  track_token_usage: true
+  track_processing_time: true
+  track_cache_hit_rate: true
+  export_metrics: true
+  metrics_file: "./logs/tokenizer_metrics.json"
+
+# モデル固有設定マッピング
+model_tokenizer_mapping:
+  "gpt-4": "tiktoken_gpt4"
+  "gpt-3.5-turbo": "tiktoken_gpt35"
+  "text-embedding-ada-002": "tiktoken_ada"
+  "qwen3:32b": "huggingface_qwen"
+  "qwen3:8b": "huggingface_qwen"
+  "llama3:8b": "huggingface_llama"
+  "Qwen/Qwen3-32B": "huggingface_qwen"
